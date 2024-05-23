@@ -164,14 +164,14 @@ where
     }
 }
 
-impl<'a, ST, QS, DB, GB> AsArrayExpression<ST> for BoxedSelectStatement<'a, ST, QS, DB, GB>
-where
-    ST: 'static,
-    Self: SelectQuery<SqlType = ST>,
-{
-    type Expression = Subselect<Self, Array<ST>>;
+// impl<'a, ST, QS, DB, GB> AsArrayExpression<ST> for BoxedSelectStatement<'a, ST, QS, DB, GB>
+// where
+//     ST: 'static,
+//     Self: SelectQuery<SqlType = ST>,
+// {
+//     type Expression = Subselect<Self, Array<ST>>;
 
-    fn as_expression(self) -> Self::Expression {
-        Subselect::new(self)
-    }
-}
+//     fn as_expression(self) -> Self::Expression {
+//         Subselect::new(self)
+//     }
+// }
