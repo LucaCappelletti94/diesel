@@ -507,9 +507,9 @@ where
 /// Implement the Expression trait for the BoxedSelectStatement
 impl<'a, ST, QS, DB, GB> Expression for BoxedSelectStatement<'a, ST, QS, DB, GB>
 where
-    ST: Expression,
+    QS: Expression,
 {
-    type SqlType = ST::SqlType;
+    type SqlType = QS::SqlType;
 }
 
 impl<'a, ST, QS, DB, GB, Predicate> HavingDsl<Predicate>
