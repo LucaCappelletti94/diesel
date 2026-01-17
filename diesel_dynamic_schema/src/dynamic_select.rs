@@ -53,6 +53,16 @@ impl<'a, DB, QS> DynamicSelectClause<'a, DB, QS> {
             self.add_field(field);
         }
     }
+
+    /// Returns the number of fields in the select clause
+    pub fn len(&self) -> usize {
+        self.selects.len()
+    }
+
+    /// Returns whether the select clause is empty
+    pub fn is_empty(&self) -> bool {
+        self.selects.is_empty()
+    }
 }
 
 impl<DB, QS> AppearsOnTable<QS> for DynamicSelectClause<'_, DB, QS> where Self: Expression {}
@@ -88,14 +98,6 @@ impl<DB, QS> ValidGrouping<()> for DynamicSelectClause<'_, DB, QS> {
     type IsAggregate = is_aggregate::No;
 }
 
-impl<'a, DB, QS> AsRef<[Box<dyn QueryFragment<DB> + Send + 'a>]>
-    for DynamicSelectClause<'a, DB, QS>
-{
-    fn as_ref(&self) -> &[Box<dyn QueryFragment<DB> + Send + 'a>] {
-        &self.selects
-    }
-}
-
 impl<'a, DB, QS, F> FromIterator<F> for DynamicSelectClause<'a, DB, QS>
 where
     F: QueryFragment<DB> + SelectableExpression<QS> + NonAggregate + Send + 'a,
@@ -105,5 +107,15 @@ where
         let mut select_clause = DynamicSelectClause::new();
         select_clause.add_fields(iter);
         select_clause
+    }
+}
+
+impl<'a, DB, QS, F> std::iter::Extend<F> for DynamicSelectClause<'a, DB, QS>
+where
+    F: QueryFragment<DB> + SelectableExpression<QS> + NonAggregate + Send + 'a,
+    DB: Backend,
+{
+    fn extend<I: IntoIterator<Item = F>>(&mut self, iter: I) {
+        self.add_fields(iter)
     }
 }

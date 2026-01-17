@@ -152,9 +152,8 @@ use diesel::deserialize::{self, FromSql};
 use diesel::expression::TypedExpressionType;
 use diesel::row::{Field, NamedRow, Row};
 use diesel::QueryableByName;
-use std::borrow::Borrow;
 use std::iter::FromIterator;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
 /// A marker type used to indicate that
 /// the provided `FromSql` impl does handle
@@ -204,6 +203,12 @@ impl<I> From<DynamicRow<NamedField<I>>> for Vec<I> {
     }
 }
 
+impl<I> From<Vec<I>> for DynamicRow<I> {
+    fn from(values: Vec<I>) -> Self {
+        Self { values }
+    }
+}
+
 impl<I> AsRef<DynamicRow<I>> for DynamicRow<I> {
     fn as_ref(&self) -> &DynamicRow<I> {
         self
@@ -219,18 +224,6 @@ pub struct NamedField<I> {
     pub name: String,
     /// Actual field value
     pub value: I,
-}
-
-impl<I> AsRef<I> for NamedField<I> {
-    fn as_ref(&self) -> &I {
-        &self.value
-    }
-}
-
-impl<I> Borrow<I> for NamedField<I> {
-    fn borrow(&self) -> &I {
-        &self.value
-    }
 }
 
 impl<I> FromIterator<I> for DynamicRow<I> {
@@ -252,6 +245,13 @@ impl<I> DynamicRow<I> {
         self.values.get(index)
     }
 
+    /// Get the mutable field value at the provided row index
+    ///
+    /// Returns `None` if the index is outside the bounds of the row
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut I> {
+        self.values.get_mut(index)
+    }
+
     /// Get the number of fields in the current row
     pub fn len(&self) -> usize {
         self.values.len()
@@ -260,6 +260,16 @@ impl<I> DynamicRow<I> {
     /// Check if the current row is empty
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
+    }
+
+    /// Returns an iterator over the values of the row
+    pub fn iter(&self) -> impl Iterator<Item = &I> {
+        self.values.iter()
+    }
+
+    /// Returns a mutable iterator over the values of the row
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut I> {
+        self.values.iter_mut()
     }
 
     /// Create a new dynamic row from an existing database row
@@ -294,6 +304,18 @@ impl<I> DynamicRow<NamedField<I>> {
             .iter()
             .find(|f| f.name == name.as_ref())
             .map(|f| &f.value)
+    }
+
+    /// Get the mutable field value by the provided field name
+    ///
+    /// Returns `None` if the field with the specified name is not found.
+    /// If there are multiple fields with the same name, the behaviour
+    /// of this function is unspecified.
+    pub fn get_mut_by_name<S: AsRef<str>>(&mut self, name: S) -> Option<&mut I> {
+        self.values
+            .iter_mut()
+            .find(|f| f.name == name.as_ref())
+            .map(|f| &mut f.value)
     }
 }
 
@@ -446,6 +468,12 @@ impl<I> Index<usize> for DynamicRow<I> {
     }
 }
 
+impl<I> IndexMut<usize> for DynamicRow<I> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.values[index]
+    }
+}
+
 impl<'a, I> Index<&'a str> for DynamicRow<NamedField<I>> {
     type Output = I;
 
@@ -458,6 +486,16 @@ impl<'a, I> Index<&'a str> for DynamicRow<NamedField<I>> {
     }
 }
 
+impl<'a, I> IndexMut<&'a str> for DynamicRow<NamedField<I>> {
+    fn index_mut(&mut self, field_name: &'a str) -> &mut Self::Output {
+        self.values
+            .iter_mut()
+            .find(|f| f.name == field_name)
+            .map(|f| &mut f.value)
+            .expect("Field not found")
+    }
+}
+
 impl<'a, I> Index<&'a String> for DynamicRow<NamedField<I>> {
     type Output = I;
 
@@ -466,11 +504,23 @@ impl<'a, I> Index<&'a String> for DynamicRow<NamedField<I>> {
     }
 }
 
+impl<'a, I> IndexMut<&'a String> for DynamicRow<NamedField<I>> {
+    fn index_mut(&mut self, field_name: &'a String) -> &mut Self::Output {
+        self.index_mut(field_name as &str)
+    }
+}
+
 impl<I> Index<String> for DynamicRow<NamedField<I>> {
     type Output = I;
 
     fn index(&self, field_name: String) -> &Self::Output {
         self.index(&field_name)
+    }
+}
+
+impl<I> IndexMut<String> for DynamicRow<NamedField<I>> {
+    fn index_mut(&mut self, field_name: String) -> &mut Self::Output {
+        self.index_mut(&field_name)
     }
 }
 
@@ -489,5 +539,14 @@ impl<'a, V> IntoIterator for &'a DynamicRow<V> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.values.iter()
+    }
+}
+
+impl<'a, V> IntoIterator for &'a mut DynamicRow<V> {
+    type Item = &'a mut V;
+    type IntoIter = <&'a mut Vec<V> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter_mut()
     }
 }
