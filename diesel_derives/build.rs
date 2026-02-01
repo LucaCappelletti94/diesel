@@ -210,7 +210,24 @@ fn main() {
         ),
         (
             "identifiable",
-            vec![Example::new("diesel_derives__tests__identifiable_1.snap")],
+            vec![
+                Example::with_heading(
+                    "diesel_derives__tests__identifiable_1.snap",
+                    "Without attributes",
+                ),
+                Example::with_heading(
+                    "diesel_derives__tests__identifiable_table_name_1.snap",
+                    "With `#[diesel(table_name = crate::schema::admin_users)]`",
+                ),
+                Example::with_heading(
+                    "diesel_derives__tests__identifiable_primary_key_1.snap",
+                    "With `#[diesel(primary_key(id, short_code))]`",
+                ),
+                Example::with_heading(
+                    "diesel_derives__tests__identifiable_column_name_1.snap",
+                    "With `#[diesel(column_name = user_id)]`",
+                ),
+            ],
         ),
         (
             "insertable",
