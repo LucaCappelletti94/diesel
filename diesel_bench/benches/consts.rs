@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+
+#[cfg(feature = "mysql")]
 pub mod mysql {
     pub const CLEANUP_QUERIES: &[&str] = &[
         "SET FOREIGN_KEY_CHECKS = 0",
@@ -16,6 +19,7 @@ pub mod mysql {
         FROM users as u LEFT JOIN posts as p on u.id = p.user_id WHERE u.hair_color = ?";
 }
 
+#[cfg(feature = "postgres")]
 pub mod postgres {
     pub const CLEANUP_QUERIES: &[&str] = &[
         "TRUNCATE TABLE comments CASCADE",

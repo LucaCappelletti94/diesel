@@ -1,3 +1,4 @@
+#[cfg(any(feature = "mysql", feature = "postgres"))]
 use super::consts;
 use super::Bencher;
 use diesel::*;
