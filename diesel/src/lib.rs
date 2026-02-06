@@ -726,6 +726,20 @@ pub mod helper_types {
             <I as crate::query_builder::insert_statement::InsertAutoTypeHelper>::Ret,
         >,
         crate::query_builder::ConflictTarget<Target>,
+        >;
+
+    /// Represents the return type of [`InsertStatement::on_conflict_do_nothing`](crate::query_builder::InsertStatement::on_conflict_do_nothing)
+    pub type OnConflictDoNothing<I> = crate::query_builder::InsertStatement<
+        <I as crate::query_builder::insert_statement::InsertAutoTypeHelper>::Table,
+        crate::query_builder::upsert::on_conflict_clause::OnConflictValues<
+            <<I as crate::query_builder::insert_statement::InsertAutoTypeHelper>::Values as crate::query_builder::IntoConflictValueClause>::ValueClause,
+            crate::query_builder::upsert::on_conflict_target::NoConflictTarget,
+            crate::query_builder::upsert::on_conflict_actions::DoNothing<
+                <I as crate::query_builder::insert_statement::InsertAutoTypeHelper>::Table,
+            >,
+        >,
+        <I as crate::query_builder::insert_statement::InsertAutoTypeHelper>::Op,
+        <I as crate::query_builder::insert_statement::InsertAutoTypeHelper>::Ret,
     >;
 
     /// Represents the return type of
@@ -756,7 +770,8 @@ pub mod helper_types {
     >;
 
     /// Represents the return type of
-    /// [`UpdateStatement::set()`](crate::query_builder::UpdateStatement::set)
+    /// [`UpdateStatement::set()`](crate::query_builder::UpdateStatement::set) and
+    /// [`IncompleteDoUpdate::set()`](crate::upsert::IncompleteDoUpdate::set)
     pub type Set<U, V> = <U as crate::query_builder::update_statement::SetAutoTypeHelper<V>>::Out;
 
     /// Represents the return type of

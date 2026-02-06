@@ -96,10 +96,7 @@ where
     /// # Ok(())
     /// # }
     /// ```
-    pub fn on_conflict_do_nothing(
-        self,
-    ) -> InsertStatement<T, OnConflictValues<U::ValueClause, NoConflictTarget, DoNothing<T>>, Op, Ret>
-    {
+    pub fn on_conflict_do_nothing(self) -> crate::dsl::OnConflictDoNothing<Self> {
         self.replace_values(|values| OnConflictValues::do_nothing(values.into_value_clause()))
     }
 
