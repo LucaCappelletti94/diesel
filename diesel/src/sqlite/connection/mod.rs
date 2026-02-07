@@ -742,7 +742,11 @@ mod tests {
         };
 
         // SQLite version should start with "3."
-        assert!(version.starts_with("3."), "Unexpected SQLite version: {}", version);
+        assert!(
+            version.starts_with("3."),
+            "Unexpected SQLite version: {}",
+            version
+        );
     }
 
     #[diesel_test_helper::test]
@@ -752,9 +756,7 @@ mod tests {
 
         // SAFETY: We only read connection status, which doesn't modify state.
         let autocommit_status = unsafe {
-            connection.with_raw_connection(|raw_conn| {
-                ffi::sqlite3_get_autocommit(raw_conn)
-            })
+            connection.with_raw_connection(|raw_conn| ffi::sqlite3_get_autocommit(raw_conn))
         };
 
         // Outside a transaction, autocommit should be enabled (returns non-zero)
@@ -767,15 +769,14 @@ mod tests {
         let connection = &mut connection();
 
         // SAFETY: We only read the pointer value, not dereferencing in unsafe ways.
-        let ptr1 = unsafe {
-            connection.with_raw_connection(|raw_conn| raw_conn as usize)
-        };
+        let ptr1 = unsafe { connection.with_raw_connection(|raw_conn| raw_conn as usize) };
 
-        let ptr2 = unsafe {
-            connection.with_raw_connection(|raw_conn| raw_conn as usize)
-        };
+        let ptr2 = unsafe { connection.with_raw_connection(|raw_conn| raw_conn as usize) };
 
-        assert_eq!(ptr1, ptr2, "Raw connection handle should be stable across calls");
+        assert_eq!(
+            ptr1, ptr2,
+            "Raw connection handle should be stable across calls"
+        );
     }
 
     #[diesel_test_helper::test]
@@ -793,9 +794,7 @@ mod tests {
 
         // SAFETY: We only read the last insert rowid, which is a read-only operation.
         let last_rowid = unsafe {
-            connection.with_raw_connection(|raw_conn| {
-                ffi::sqlite3_last_insert_rowid(raw_conn)
-            })
+            connection.with_raw_connection(|raw_conn| ffi::sqlite3_last_insert_rowid(raw_conn))
         };
 
         assert_eq!(last_rowid, 1, "Last insert rowid should be 1");
@@ -860,31 +859,35 @@ mod tests {
             .execute(connection)
             .unwrap();
 
-        connection.transaction::<_, crate::result::Error, _>(|conn| {
-            crate::sql_query("INSERT INTO txn_test (value) VALUES (42)")
-                .execute(conn)
-                .unwrap();
+        connection
+            .transaction::<_, crate::result::Error, _>(|conn| {
+                crate::sql_query("INSERT INTO txn_test (value) VALUES (42)")
+                    .execute(conn)
+                    .unwrap();
 
-            // SAFETY: We only read the autocommit status inside a transaction.
-            let autocommit = unsafe {
-                conn.with_raw_connection(|raw_conn| {
-                    ffi::sqlite3_get_autocommit(raw_conn)
-                })
-            };
+                // SAFETY: We only read the autocommit status inside a transaction.
+                let autocommit = unsafe {
+                    conn.with_raw_connection(|raw_conn| ffi::sqlite3_get_autocommit(raw_conn))
+                };
 
-            // Inside a transaction, autocommit should be disabled (returns 0)
-            assert_eq!(autocommit, 0, "Autocommit should be disabled inside transaction");
+                // Inside a transaction, autocommit should be disabled (returns 0)
+                assert_eq!(
+                    autocommit, 0,
+                    "Autocommit should be disabled inside transaction"
+                );
 
-            Ok(())
-        }).unwrap();
+                Ok(())
+            })
+            .unwrap();
 
         // After transaction commits, autocommit should be re-enabled
         let autocommit = unsafe {
-            connection.with_raw_connection(|raw_conn| {
-                ffi::sqlite3_get_autocommit(raw_conn)
-            })
+            connection.with_raw_connection(|raw_conn| ffi::sqlite3_get_autocommit(raw_conn))
         };
-        assert_ne!(autocommit, 0, "Autocommit should be enabled after transaction");
+        assert_ne!(
+            autocommit, 0,
+            "Autocommit should be enabled after transaction"
+        );
     }
 
     #[diesel_test_helper::test]
@@ -909,7 +912,10 @@ mod tests {
 
         // For in-memory databases, filename is typically empty or a special value
         // The important thing is that the call succeeded without crashing
-        assert!(filename.is_some() || filename.is_none(), "Should handle filename query");
+        assert!(
+            filename.is_some() || filename.is_none(),
+            "Should handle filename query"
+        );
     }
 
     #[diesel_test_helper::test]
