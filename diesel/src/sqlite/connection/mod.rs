@@ -21,8 +21,6 @@ pub use self::serialized_database::SerializedDatabase;
 pub use self::sqlite_value::SqliteValue;
 pub use self::update_hook::{ChangeHookId, SqliteChangeEvent, SqliteChangeOp, SqliteChangeOps};
 
-use std::os::raw as libc;
-
 use self::raw::RawConnection;
 use self::statement_iterator::*;
 use self::stmt::{Statement, StatementUse};
@@ -38,6 +36,8 @@ use crate::result::*;
 use crate::serialize::ToSql;
 use crate::sql_types::{HasSqlType, TypeMetadata};
 use crate::sqlite::Sqlite;
+use alloc::string::String;
+use core::ffi as libc;
 
 /// Connections for the SQLite backend. Unlike other backends, SQLite supported
 /// connection URLs are:
@@ -162,7 +162,7 @@ use crate::sqlite::Sqlite;
 /// # }
 /// ```
 #[allow(missing_debug_implementations)]
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "__sqlite-shared")]
 pub struct SqliteConnection {
     // statement_cache needs to be before raw_connection
     // otherwise we will get errors about open statements before closing the
@@ -307,12 +307,12 @@ impl crate::r2d2::R2D2Connection for crate::sqlite::SqliteConnection {
 impl MultiConnectionHelper for SqliteConnection {
     fn to_any<'a>(
         lookup: &mut <Self::Backend as crate::sql_types::TypeMetadata>::MetadataLookup,
-    ) -> &mut (dyn std::any::Any + 'a) {
+    ) -> &mut (dyn core::any::Any + 'a) {
         lookup
     }
 
     fn from_any(
-        lookup: &mut dyn std::any::Any,
+        lookup: &mut dyn core::any::Any,
     ) -> Option<&mut <Self::Backend as crate::sql_types::TypeMetadata>::MetadataLookup> {
         lookup.downcast_mut()
     }
@@ -439,7 +439,7 @@ impl SqliteConnection {
         mut f: F,
     ) -> QueryResult<()>
     where
-        F: FnMut(Args) -> Ret + std::panic::UnwindSafe + Send + 'static,
+        F: FnMut(Args) -> Ret + core::panic::UnwindSafe + Send + 'static,
         Args: FromSqlRow<ArgsSqlType, Sqlite> + StaticallySizedRow<ArgsSqlType, Sqlite>,
         Ret: ToSql<RetSqlType, Sqlite>,
         Sqlite: HasSqlType<RetSqlType>,
@@ -460,7 +460,7 @@ impl SqliteConnection {
         f: F,
     ) -> QueryResult<()>
     where
-        F: FnMut() -> Ret + std::panic::UnwindSafe + Send + 'static,
+        F: FnMut() -> Ret + core::panic::UnwindSafe + Send + 'static,
         Ret: ToSql<RetSqlType, Sqlite>,
         Sqlite: HasSqlType<RetSqlType>,
     {
@@ -473,7 +473,7 @@ impl SqliteConnection {
         fn_name: &str,
     ) -> QueryResult<()>
     where
-        A: SqliteAggregateFunction<Args, Output = Ret> + 'static + Send + std::panic::UnwindSafe,
+        A: SqliteAggregateFunction<Args, Output = Ret> + 'static + Send + core::panic::UnwindSafe,
         Args: FromSqlRow<ArgsSqlType, Sqlite> + StaticallySizedRow<ArgsSqlType, Sqlite>,
         Ret: ToSql<RetSqlType, Sqlite>,
         Sqlite: HasSqlType<RetSqlType>,
@@ -518,7 +518,7 @@ impl SqliteConnection {
     /// ```
     pub fn register_collation<F>(&mut self, collation_name: &str, collation: F) -> QueryResult<()>
     where
-        F: Fn(&str, &str) -> std::cmp::Ordering + Send + 'static + std::panic::UnwindSafe,
+        F: Fn(&str, &str) -> core::cmp::Ordering + Send + 'static + core::panic::UnwindSafe,
     {
         self.raw_connection
             .register_collation_function(collation_name, collation)
@@ -1293,7 +1293,7 @@ impl SqliteConnection {
             "diesel_manage_updated_at",
             false,
             |conn, table_name: String| {
-                conn.exec(&format!(
+                conn.exec(&alloc::format!(
                     include_str!("diesel_manage_updated_at.sql"),
                     table_name = table_name
                 ))
