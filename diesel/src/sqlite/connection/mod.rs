@@ -940,7 +940,7 @@ impl SqliteConnection {
     ///
     /// If the row cannot be found (e.g. it was deleted by a trigger), this
     /// returns [`Err(NotFound)`](crate::result::Error::NotFound).
-    /// 
+    ///
     /// This is NOT a shortcut for loading by primary key.
     /// It always queries by `rowid`, which may not be the same column
     /// as the primary key, or may not even exist for [`WITHOUT ROWID`](https://www.sqlite.org/withoutrowid.html) tables.
@@ -2159,11 +2159,9 @@ mod tests {
         use std::sync::{Arc, Mutex};
         let conn = &mut connection();
 
-        crate::sql_query(
-            "CREATE TABLE kv (key TEXT PRIMARY KEY, val TEXT NOT NULL) WITHOUT ROWID",
-        )
-        .execute(conn)
-        .unwrap();
+        crate::sql_query("CREATE TABLE kv (key TEXT PRIMARY KEY, val TEXT NOT NULL) WITHOUT ROWID")
+            .execute(conn)
+            .unwrap();
 
         let events: Arc<Mutex<Vec<SqliteChangeOp>>> = Arc::new(Mutex::new(Vec::new()));
         let e2 = events.clone();
@@ -2199,18 +2197,15 @@ mod tests {
         use std::sync::{Arc, Mutex};
         let conn = &mut connection();
 
-        crate::sql_query(
-            "CREATE TABLE uq (id INTEGER PRIMARY KEY, val TEXT NOT NULL UNIQUE)",
-        )
-        .execute(conn)
-        .unwrap();
+        crate::sql_query("CREATE TABLE uq (id INTEGER PRIMARY KEY, val TEXT NOT NULL UNIQUE)")
+            .execute(conn)
+            .unwrap();
 
         crate::sql_query("INSERT INTO uq (id, val) VALUES (1, 'original')")
             .execute(conn)
             .unwrap();
 
-        let events: Arc<Mutex<Vec<(SqliteChangeOp, i64)>>> =
-            Arc::new(Mutex::new(Vec::new()));
+        let events: Arc<Mutex<Vec<(SqliteChangeOp, i64)>>> = Arc::new(Mutex::new(Vec::new()));
         let e2 = events.clone();
 
         conn.on_change(SqliteChangeOps::ALL, move |ev| {
@@ -2222,11 +2217,9 @@ mod tests {
         // INSERT OR REPLACE with a conflicting val: the old row (id=1) is
         // silently deleted by SQLite and the new row (id=2) is inserted.
         // The hook fires only for the INSERT of the new row.
-        crate::sql_query(
-            "INSERT OR REPLACE INTO uq (id, val) VALUES (2, 'original')",
-        )
-        .execute(conn)
-        .unwrap();
+        crate::sql_query("INSERT OR REPLACE INTO uq (id, val) VALUES (2, 'original')")
+            .execute(conn)
+            .unwrap();
 
         let recorded = events.lock().unwrap();
         assert_eq!(
@@ -2251,11 +2244,9 @@ mod tests {
         //   1. No WHERE clause
         //   2. No RETURNING clause
         //   3. No triggers on the table
-        crate::sql_query(
-            "CREATE TABLE bulk (id INTEGER PRIMARY KEY, data TEXT NOT NULL)",
-        )
-        .execute(conn)
-        .unwrap();
+        crate::sql_query("CREATE TABLE bulk (id INTEGER PRIMARY KEY, data TEXT NOT NULL)")
+            .execute(conn)
+            .unwrap();
 
         crate::sql_query("INSERT INTO bulk (data) VALUES ('a'), ('b'), ('c')")
             .execute(conn)
@@ -2286,11 +2277,9 @@ mod tests {
         use std::sync::{Arc, Mutex};
         let conn = &mut connection();
 
-        crate::sql_query(
-            "CREATE TABLE triggered (id INTEGER PRIMARY KEY, data TEXT NOT NULL)",
-        )
-        .execute(conn)
-        .unwrap();
+        crate::sql_query("CREATE TABLE triggered (id INTEGER PRIMARY KEY, data TEXT NOT NULL)")
+            .execute(conn)
+            .unwrap();
         // A no-op trigger is enough to disable the truncate optimization.
         crate::sql_query(
             "CREATE TRIGGER trg_triggered BEFORE DELETE ON triggered \
@@ -2299,11 +2288,9 @@ mod tests {
         .execute(conn)
         .unwrap();
 
-        crate::sql_query(
-            "INSERT INTO triggered (data) VALUES ('x'), ('y'), ('z')",
-        )
-        .execute(conn)
-        .unwrap();
+        crate::sql_query("INSERT INTO triggered (data) VALUES ('x'), ('y'), ('z')")
+            .execute(conn)
+            .unwrap();
 
         let deletes: Arc<Mutex<Vec<i64>>> = Arc::new(Mutex::new(Vec::new()));
         let d2 = deletes.clone();
@@ -2373,18 +2360,15 @@ mod tests {
         use std::sync::{Arc, Mutex};
         let conn = &mut connection();
 
-        crate::sql_query(
-            "CREATE TABLE rep (id INTEGER PRIMARY KEY, val TEXT NOT NULL)",
-        )
-        .execute(conn)
-        .unwrap();
+        crate::sql_query("CREATE TABLE rep (id INTEGER PRIMARY KEY, val TEXT NOT NULL)")
+            .execute(conn)
+            .unwrap();
 
         crate::sql_query("INSERT INTO rep (id, val) VALUES (1, 'old')")
             .execute(conn)
             .unwrap();
 
-        let events: Arc<Mutex<Vec<(SqliteChangeOp, i64)>>> =
-            Arc::new(Mutex::new(Vec::new()));
+        let events: Arc<Mutex<Vec<(SqliteChangeOp, i64)>>> = Arc::new(Mutex::new(Vec::new()));
         let e2 = events.clone();
 
         conn.on_change(SqliteChangeOps::ALL, move |ev| {
