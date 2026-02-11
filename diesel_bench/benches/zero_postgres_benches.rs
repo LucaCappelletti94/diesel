@@ -45,7 +45,7 @@ fn connection() -> Conn {
     conn
 }
 
-fn insert_users(
+fn insert_users_for_setup(
     size: usize,
     conn: &mut Conn,
     hair_color_init: impl Fn(usize) -> Option<&'static str>,
@@ -61,7 +61,7 @@ fn insert_users(
 
 pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
     let mut conn = connection();
-    insert_users(size, &mut conn, |_| None);
+    insert_users_for_setup(size, &mut conn, |_| None);
 
     let stmt = conn
         .prepare(TRIVIAL_QUERY)
@@ -84,7 +84,7 @@ pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
 
 pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
     let mut conn = connection();
-    insert_users(size, &mut conn, |_| None);
+    insert_users_for_setup(size, &mut conn, |_| None);
 
     let stmt = conn
         .prepare(TRIVIAL_QUERY)
@@ -103,7 +103,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
 
 pub fn bench_medium_complex_query(b: &mut Bencher, size: usize) {
     let mut conn = connection();
-    insert_users(size, &mut conn, |i| {
+    insert_users_for_setup(size, &mut conn, |i| {
         Some(if i % 2 == 0 { "black" } else { "brown" })
     });
 
@@ -145,14 +145,22 @@ pub fn bench_medium_complex_query(b: &mut Bencher, size: usize) {
 
 pub fn bench_insert(b: &mut Bencher, size: usize) {
     let mut conn = connection();
+    let query = build_insert_users_query(size);
+    let stmt = conn.prepare(&query).unwrap();
 
-    b.iter(|| insert_users(size, &mut conn, |_| Some("hair_color")))
+    b.iter(|| {
+        let params: Vec<Option<String>> = build_insert_users_params(size, |_| Some("hair_color"))
+            .into_iter()
+            .flat_map(|(name, hair_color)| [Some(name), hair_color.map(String::from)])
+            .collect();
+        conn.exec_drop(&stmt, params).unwrap();
+    })
 }
 
 pub fn loading_associations_sequentially(b: &mut Bencher) {
     let mut conn = connection();
 
-    insert_users(100, &mut conn, |i| {
+    insert_users_for_setup(100, &mut conn, |i| {
         Some(if i % 2 == 0 { "black" } else { "brown" })
     });
 

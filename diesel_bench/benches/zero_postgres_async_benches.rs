@@ -46,7 +46,7 @@ async fn connection() -> Conn {
     conn
 }
 
-async fn insert_users(
+async fn insert_users_for_setup(
     conn: &mut Conn,
     size: usize,
     hair_color_init: impl Fn(usize) -> Option<&'static str>,
@@ -64,7 +64,7 @@ pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
     let runtime = Runtime::new().unwrap();
     let (mut conn, stmt) = runtime.block_on(async {
         let mut conn = connection().await;
-        insert_users(&mut conn, size, |_| None).await;
+        insert_users_for_setup(&mut conn, size, |_| None).await;
         let stmt = conn
             .prepare(TRIVIAL_QUERY)
             .await
@@ -94,7 +94,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
     let runtime = Runtime::new().unwrap();
     let (mut conn, stmt) = runtime.block_on(async {
         let mut conn = connection().await;
-        insert_users(&mut conn, size, |_| None).await;
+        insert_users_for_setup(&mut conn, size, |_| None).await;
         let stmt = conn
             .prepare(TRIVIAL_QUERY)
             .await
@@ -120,7 +120,7 @@ pub fn bench_medium_complex_query(b: &mut Bencher, size: usize) {
     let runtime = Runtime::new().unwrap();
     let (mut conn, stmt) = runtime.block_on(async {
         let mut conn = connection().await;
-        insert_users(&mut conn, size, |i| {
+        insert_users_for_setup(&mut conn, size, |i| {
             Some(if i % 2 == 0 { "black" } else { "brown" })
         })
         .await;
@@ -167,9 +167,23 @@ pub fn bench_medium_complex_query(b: &mut Bencher, size: usize) {
 
 pub fn bench_insert(b: &mut Bencher, size: usize) {
     let runtime = Runtime::new().unwrap();
-    let mut conn = runtime.block_on(connection());
+    let (mut conn, stmt) = runtime.block_on(async {
+        let mut conn = connection().await;
+        let query = build_insert_users_query(size);
+        let stmt = conn.prepare(&query).await.unwrap();
+        (conn, stmt)
+    });
 
-    b.iter(|| runtime.block_on(insert_users(&mut conn, size, |_| Some("hair_color"))))
+    b.iter(|| {
+        runtime.block_on(async {
+            let params: Vec<Option<String>> =
+                build_insert_users_params(size, |_| Some("hair_color"))
+                    .into_iter()
+                    .flat_map(|(name, hair_color)| [Some(name), hair_color.map(String::from)])
+                    .collect();
+            conn.exec_drop(&stmt, params).await.unwrap();
+        })
+    })
 }
 
 pub fn loading_associations_sequentially(b: &mut Bencher) {
@@ -177,7 +191,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
     let mut conn = runtime.block_on(async {
         let mut conn = connection().await;
 
-        insert_users(&mut conn, 100, |i| {
+        insert_users_for_setup(&mut conn, 100, |i| {
             Some(if i % 2 == 0 { "black" } else { "brown" })
         })
         .await;
