@@ -160,27 +160,25 @@ fn connection() -> (Runtime, Connection) {
 async fn insert_users(
     size: usize,
     conn: &mut Connection,
-    hair_color_init: impl Fn(usize) -> Option<String>,
+    hair_color_init: impl Fn(usize) -> Option<&'static str>,
 ) {
     if size == 0 {
         return;
     }
 
-    let mut query = String::from("INSERT INTO users (name, hair_color) VALUES");
+    let query_string = {
+        #[cfg(feature = "postgres")]
+        { consts::postgres::build_insert_users_query(size) }
+        #[cfg(feature = "mysql")]
+        { consts::mysql::build_insert_users_query(size) }
+        #[cfg(feature = "sqlite")]
+        { consts::mysql::build_insert_users_query(size) }
+    };
 
-    for x in 0..size {
-        let (bind_a, bind_b) = if cfg!(any(feature = "mysql", feature = "sqlite")) {
-            ("?".into(), "?".into())
-        } else {
-            (format!("${}", 2 * x + 1), format!("${}", 2 * x + 2))
-        };
-        query += &format!("{} ({}, {})", if x == 0 { "" } else { "," }, bind_a, bind_b);
-    }
-
-    let mut query = sqlx::query(&query);
-
-    for x in 0..size {
-        query = query.bind(format!("User {}", x)).bind(hair_color_init(x));
+    let params = consts::build_insert_users_params(size, hair_color_init);
+    let mut query = sqlx::query(&query_string);
+    for (name, hair_color) in &params {
+        query = query.bind(name).bind(hair_color);
     }
 
     query.execute(conn).await.unwrap();
@@ -221,7 +219,7 @@ pub fn bench_medium_complex_query_query_as_macro(b: &mut Bencher, size: usize) {
     let (rt, mut conn) = connection();
 
     rt.block_on(insert_users(size, &mut conn, |i| {
-        Some(if i % 2 == 0 { "black" } else { "brown" }.into())
+        Some(if i % 2 == 0 { "black" } else { "brown" })
     }));
 
     b.iter(|| {
@@ -270,7 +268,7 @@ pub fn bench_medium_complex_query_from_row(b: &mut Bencher, size: usize) {
     let (rt, mut conn) = connection();
 
     rt.block_on(insert_users(size, &mut conn, |i| {
-        Some(if i % 2 == 0 { "black" } else { "brown" }.into())
+        Some(if i % 2 == 0 { "black" } else { "brown" })
     }));
     #[cfg(feature = "postgres")]
     let bind = "$1";
@@ -321,7 +319,7 @@ pub fn bench_insert(b: &mut Bencher, size: usize) {
 
     b.iter(|| {
         rt.block_on(insert_users(size, &mut conn, |_| {
-            Some(String::from("hair_color"))
+            Some("hair_color")
         }))
     })
 }
@@ -338,11 +336,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
     let (rt, mut conn) = connection();
 
     rt.block_on(insert_users(USER_NUMBER, &mut conn, |i| {
-        Some(if i % 2 == 0 {
-            String::from("black")
-        } else {
-            String::from("brown")
-        })
+        Some(if i % 2 == 0 { "black" } else { "brown" })
     }));
 
     let user_ids = rt.block_on(async {

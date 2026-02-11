@@ -1,4 +1,7 @@
-use crate::consts::postgres::{CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, TRIVIAL_QUERY};
+use crate::consts::build_insert_users_params;
+use crate::consts::postgres::{
+    build_insert_users_query, CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, TRIVIAL_QUERY,
+};
 use crate::Bencher;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -47,17 +50,11 @@ fn insert_users(
     conn: &mut Conn,
     hair_color_init: impl Fn(usize) -> Option<&'static str>,
 ) {
-    let mut query = String::from("INSERT INTO users (name, hair_color) VALUES ");
-    let mut params: Vec<Option<String>> = Vec::with_capacity(size * 2);
-    for x in 0..size {
-        if x > 0 {
-            query.push(',');
-        }
-        let idx = x * 2;
-        write!(query, "(${}, ${})", idx + 1, idx + 2).unwrap();
-        params.push(Some(format!("User {}", x)));
-        params.push(hair_color_init(x).map(String::from));
-    }
+    let query = build_insert_users_query(size);
+    let params: Vec<Option<String>> = build_insert_users_params(size, hair_color_init)
+        .into_iter()
+        .flat_map(|(name, hair_color)| [Some(name), hair_color.map(String::from)])
+        .collect();
     let stmt = conn.prepare(&query).unwrap();
     conn.exec_drop(&stmt, params).unwrap();
 }

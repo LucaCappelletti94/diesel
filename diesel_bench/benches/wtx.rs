@@ -408,15 +408,12 @@ async fn insert_users<const N: usize>(
     conn: &mut LocalExecutor<wtx::Error, ExecutorBuffer, TcpStream>,
     hair_color_init: impl Fn(usize) -> Option<&'static str>,
 ) {
-    let mut query = String::from("INSERT INTO users (name, hair_color) VALUES ");
-    concat(0..N, &mut query, |local_query, _idx| {
+    let query = {
         #[cfg(feature = "postgres")]
-        local_query
-            .write_fmt(format_args!("(${}, ${})", 2 * _idx + 1, 2 * _idx + 2))
-            .unwrap();
+        { consts::postgres::build_insert_users_query(N) }
         #[cfg(feature = "mysql")]
-        local_query.push_str("(?, ?)");
-    });
+        { consts::mysql::build_insert_users_query(N) }
+    };
 
     let params = (0..N).into_iter().flat_map(|idx| {
         [
