@@ -1,4 +1,4 @@
-use crate::consts::mysql::{CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID};
+use crate::consts::mysql::{CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, TRIVIAL_QUERY};
 use crate::Bencher;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -68,7 +68,7 @@ pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
         let mut conn = connection().await;
         insert_users(&mut conn, size, |_| None).await;
         let stmt = conn
-            .prepare("SELECT id, name, hair_color FROM users")
+            .prepare(TRIVIAL_QUERY)
             .await
             .unwrap();
         (conn, stmt)
@@ -98,7 +98,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
         let mut conn = connection().await;
         insert_users(&mut conn, size, |_| None).await;
         let stmt = conn
-            .prepare("SELECT id, name, hair_color FROM users")
+            .prepare(TRIVIAL_QUERY)
             .await
             .unwrap();
         (conn, stmt)
@@ -235,7 +235,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
         conn.query_drop(&insert_query).await.unwrap();
 
         let user_stmt = conn
-            .prepare("SELECT id, name, hair_color FROM users")
+            .prepare(TRIVIAL_QUERY)
             .await
             .unwrap();
 

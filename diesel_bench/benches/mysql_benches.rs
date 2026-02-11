@@ -1,5 +1,5 @@
 use super::consts::mysql::{
-    CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, MEDIUM_COMPLEX_QUERY_BY_NAME,
+    CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, MEDIUM_COMPLEX_QUERY_BY_NAME, TRIVIAL_QUERY,
 };
 use super::Bencher;
 use rust_mysql::params::Params;
@@ -68,7 +68,7 @@ pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
     let mut conn = connection();
     insert_users(size, &mut conn, |_| None);
 
-    let query = conn.prep("SELECT id, name, hair_color FROM users").unwrap();
+    let query = conn.prep(TRIVIAL_QUERY).unwrap();
 
     b.iter(|| {
         conn.exec_map(&query, Params::Empty, |mut row: Row| User {
@@ -84,7 +84,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
     let mut conn = connection();
     insert_users(size, &mut conn, |_| None);
 
-    let query = conn.prep("SELECT id, name, hair_color FROM users").unwrap();
+    let query = conn.prep(TRIVIAL_QUERY).unwrap();
 
     b.iter(|| {
         conn.exec_map(&query, Params::Empty, |mut row: Row| User {
@@ -242,7 +242,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
         .unwrap();
 
     let user_query = client
-        .prep("SELECT id, name, hair_color FROM users")
+        .prep(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {

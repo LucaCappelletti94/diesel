@@ -64,7 +64,12 @@ pub fn bench_loading_associations_sequentially(b: &mut Bencher) {
         insert_posts::<LEN>(&mut conn).await;
 
         let stmt_hash = conn
-            .prepare("SELECT id, name, hair_color FROM users")
+            .prepare({
+                #[cfg(feature = "postgres")]
+                { consts::postgres::TRIVIAL_QUERY }
+                #[cfg(feature = "mysql")]
+                { consts::mysql::TRIVIAL_QUERY }
+            })
             .await
             .unwrap();
 
@@ -232,7 +237,12 @@ pub fn bench_trivial_query(b: &mut Bencher, size: usize) {
             _ => unimplemented!(),
         };
         let stmt_hash = conn
-            .prepare("SELECT id, name, hair_color FROM users")
+            .prepare({
+                #[cfg(feature = "postgres")]
+                { consts::postgres::TRIVIAL_QUERY }
+                #[cfg(feature = "mysql")]
+                { consts::mysql::TRIVIAL_QUERY }
+            })
             .await
             .unwrap();
         (conn, stmt_hash)

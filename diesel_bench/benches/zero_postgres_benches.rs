@@ -1,4 +1,4 @@
-use crate::consts::postgres::{CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID};
+use crate::consts::postgres::{CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, TRIVIAL_QUERY};
 use crate::Bencher;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -67,7 +67,7 @@ pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
     insert_users(size, &mut conn, |_| None);
 
     let stmt = conn
-        .prepare("SELECT id, name, hair_color FROM users")
+        .prepare(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {
@@ -90,7 +90,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
     insert_users(size, &mut conn, |_| None);
 
     let stmt = conn
-        .prepare("SELECT id, name, hair_color FROM users")
+        .prepare(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {
@@ -206,7 +206,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
     b.iter(|| {
         // Load users
         let users: Vec<User> = conn
-            .query_collect("SELECT id, name, hair_color FROM users")
+            .query_collect(TRIVIAL_QUERY)
             .unwrap();
 
         // Build IN clause with actual values

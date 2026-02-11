@@ -10,6 +10,8 @@ pub mod mysql {
         "SET FOREIGN_KEY_CHECKS = 1",
     ];
 
+    pub const TRIVIAL_QUERY: &str = "SELECT id, name, hair_color FROM users";
+
     pub const MEDIUM_COMPLEX_QUERY_BY_ID: &str = "\
         SELECT u.id, u.name, u.hair_color, p.id, p.user_id, p.title, p.body \
         FROM users as u LEFT JOIN posts as p on u.id = p.user_id WHERE u.hair_color = ?";
@@ -26,6 +28,8 @@ pub mod postgres {
         "TRUNCATE TABLE posts CASCADE",
         "TRUNCATE TABLE users CASCADE",
     ];
+
+    pub const TRIVIAL_QUERY: &str = "SELECT id, name, hair_color FROM users";
 
     pub const MEDIUM_COMPLEX_QUERY_BY_ID: &str = "\
         SELECT u.id, u.name, u.hair_color, p.id, p.user_id, p.title, p.body \

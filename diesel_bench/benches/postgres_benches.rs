@@ -1,5 +1,5 @@
 use super::consts::postgres::{
-    CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, MEDIUM_COMPLEX_QUERY_BY_NAME,
+    CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, MEDIUM_COMPLEX_QUERY_BY_NAME, TRIVIAL_QUERY,
 };
 use super::Bencher;
 use rust_postgres::fallible_iterator::FallibleIterator;
@@ -70,7 +70,7 @@ pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
     insert_users(size, &mut client, |_| None);
 
     let query = client
-        .prepare("SELECT id, name, hair_color FROM users")
+        .prepare(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {
@@ -94,7 +94,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
     insert_users(size, &mut client, |_| None);
 
     let query = client
-        .prepare("SELECT id, name, hair_color FROM users")
+        .prepare(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {
@@ -268,7 +268,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
     client.execute(&insert_query as &str, &data).unwrap();
 
     let user_query = client
-        .prepare("SELECT id, name, hair_color FROM users")
+        .prepare(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {
