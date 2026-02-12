@@ -310,7 +310,7 @@ impl ToSql<TimestamptzSqlite, Sqlite> for OffsetDateTime {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(all(target_family = "wasm", target_os = "unknown"))))]
 mod tests {
     extern crate dotenvy;
 
