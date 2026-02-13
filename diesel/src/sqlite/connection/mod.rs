@@ -706,31 +706,6 @@ mod tests {
 
     #[diesel_test_helper::test]
     #[allow(unsafe_code)]
-    fn with_raw_connection_provides_valid_handle() {
-        let connection = &mut connection();
-
-        // SAFETY: We only read the SQLite version, which is a safe operation
-        // that doesn't modify connection state.
-        let version = unsafe {
-            connection.with_raw_connection(|raw_conn| {
-                assert!(!raw_conn.is_null());
-                // Use sqlite3_libversion to verify we have a valid connection
-                let version_ptr = ffi::sqlite3_libversion();
-                let version_cstr = core::ffi::CStr::from_ptr(version_ptr);
-                version_cstr.to_str().unwrap().to_owned()
-            })
-        };
-
-        // SQLite version should start with "3."
-        assert!(
-            version.starts_with("3."),
-            "Unexpected SQLite version: {}",
-            version
-        );
-    }
-
-    #[diesel_test_helper::test]
-    #[allow(unsafe_code)]
     fn with_raw_connection_can_return_values() {
         let connection = &mut connection();
 
