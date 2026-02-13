@@ -613,8 +613,6 @@ impl SqliteConnection {
     ///
     /// - The connection handle is **not closed** during the callback.
     /// - The connection handle is **not stored** beyond the callback's scope.
-    /// - Any state changes made through the raw handle are **compatible** with
-    ///   Diesel's expectations about the connection state.
     /// - Concurrent access rules are respected (SQLite connections are not thread-safe
     ///   unless using serialized threading mode).
     ///
