@@ -57,12 +57,18 @@ libsqlite3-sys = { version = ">=0.17.2, <0.37.0", optional = true, features = ["
 sqlite-wasm-rs = { version = ">=0.4.0, <0.6.0", optional = true, default-features = false }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]
+<<<<<<< sqlite3_update_hook
 # Transitive dependencies may pull in various getrandom versions.
 # Enable WASM support features for each version to prevent CI failures.
 # (getrandom 0.2 uses "js", 0.3+ use "wasm_js" crate feature)
 getrandom = { version = "0.2", features = ["js"] }
 getrandom_03 = { version = "0.3", package = "getrandom", features = ["wasm_js"] }
 getrandom_04 = { version = "0.4", package = "getrandom", features = ["wasm_js"] }
+=======
+# Something is dependent on it, we use feature to override it.
+getrandom = { version = "0.4", features = ["wasm_js"] }
+getrandom_03 = { version = "0.3", features = ["wasm_js"], package = "getrandom" }
+>>>>>>> main
 wasm-bindgen-test = "0.3.49"
 
 [dev-dependencies]
