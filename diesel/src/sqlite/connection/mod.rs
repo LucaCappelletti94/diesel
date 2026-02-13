@@ -691,7 +691,6 @@ impl SqliteConnection {
     }
 }
 
-
 fn error_message(err_code: libc::c_int) -> &'static str {
     ffi::code_to_str(err_code)
 }
