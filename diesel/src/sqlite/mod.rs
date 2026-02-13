@@ -17,7 +17,6 @@ pub use self::connection::SerializedDatabase;
 pub use self::connection::SqliteBindValue;
 pub use self::connection::SqliteConnection;
 pub use self::connection::SqliteValue;
-pub use self::connection::WithRawConnection;
 pub use self::query_builder::SqliteQueryBuilder;
 
 /// Trait for the implementation of a SQLite aggregate function

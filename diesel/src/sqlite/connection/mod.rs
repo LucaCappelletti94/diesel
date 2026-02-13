@@ -573,6 +573,90 @@ impl SqliteConnection {
         self.raw_connection.deserialize(data)
     }
 
+    /// Provides temporary access to the raw SQLite database connection handle.
+    ///
+    /// This method provides a way to access the underlying `sqlite3` pointer,
+    /// enabling direct use of the SQLite C API for advanced features that
+    /// Diesel does not wrap, such as the [session extension](https://www.sqlite.org/sessionintro.html),
+    /// [hooks](https://www.sqlite.org/c3ref/update_hook.html), or other advanced APIs.
+    ///
+    /// # Why Diesel Doesn't Wrap These APIs
+    ///
+    /// Certain SQLite features, such as the session extension, are **optional** and only
+    /// available when SQLite is compiled with specific flags (e.g., `-DSQLITE_ENABLE_SESSION`
+    /// and `-DSQLITE_ENABLE_PREUPDATE_HOOK` for sessions). These compile-time options determine
+    /// whether the corresponding C API functions exist in the SQLite library's ABI.
+    ///
+    /// Because Diesel must work with any SQLite library at runtime—including system-provided
+    /// libraries that may lack these optional features—it **cannot safely provide wrappers**
+    /// for APIs that may or may not exist. Doing so would either:
+    ///
+    /// - Cause **linker errors** at compile time if the user's `libsqlite3-sys` wasn't compiled
+    ///   with the required flags, or
+    /// - Cause **undefined behavior** at runtime if Diesel called functions that don't exist
+    ///   in the linked library.
+    ///
+    /// While feature gates could theoretically solve this problem, Diesel already has an
+    /// extensive API surface with many existing feature combinations. Each new feature gate
+    /// adds a **combinatorial explosion** of test configurations that must be validated,
+    /// making the library increasingly difficult to maintain. Therefore, exposing the raw
+    /// connection is the preferred approach for niche SQLite features.
+    ///
+    /// By exposing the raw connection handle, Diesel allows users who **know** they have
+    /// access to a properly configured SQLite build to use these advanced features directly
+    /// through their own FFI bindings.
+    ///
+    /// # Safety
+    ///
+    /// This method is marked `unsafe` because improper use of the raw connection handle
+    /// can lead to undefined behavior. The caller must ensure that:
+    ///
+    /// - The connection handle is **not closed** during the callback.
+    /// - The connection handle is **not stored** beyond the callback's scope.
+    /// - Any state changes made through the raw handle are **compatible** with
+    ///   Diesel's expectations about the connection state.
+    /// - Concurrent access rules are respected (SQLite connections are not thread-safe
+    ///   unless using serialized threading mode).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use diesel::sqlite::SqliteConnection;
+    /// use diesel::Connection;
+    ///
+    /// let mut conn = SqliteConnection::establish(":memory:").unwrap();
+    ///
+    /// // SAFETY: We do not close or store the connection handle,
+    /// // and we do not modify state that Diesel depends on.
+    /// let version = unsafe {
+    ///     conn.with_raw_connection(|_raw_conn| {
+    ///         // Use raw_conn with SQLite C API functions from your own
+    ///         // `libsqlite3-sys` (native) or `sqlite-wasm-rs` (WASM) dependency.
+    ///         // For example: ffi::sqlite3session_create(raw_conn, ...)
+    ///         42 // return a value
+    ///     })
+    /// };
+    /// assert_eq!(version, 42);
+    /// ```
+    ///
+    /// # Platform Notes
+    ///
+    /// This method works identically on both native and WASM targets. However,
+    /// you must depend on the appropriate FFI crate for your target:
+    ///
+    /// - **Native**: Add `libsqlite3-sys` as a dependency
+    /// - **WASM** (`wasm32-unknown-unknown`): Add `sqlite-wasm-rs` as a dependency
+    ///
+    /// Both crates expose a compatible `sqlite3` type that can be used with the
+    /// pointer returned by this method.
+    #[allow(unsafe_code)]
+    pub unsafe fn with_raw_connection<R, F>(&mut self, f: F) -> R
+    where
+        F: FnOnce(*mut ffi::sqlite3) -> R,
+    {
+        f(self.raw_connection.internal_connection.as_ptr())
+    }
+
     fn register_diesel_sql_functions(&self) -> QueryResult<()> {
         use crate::sql_types::{Integer, Text};
 
@@ -607,107 +691,6 @@ impl SqliteConnection {
     }
 }
 
-/// A trait for accessing the raw SQLite database connection handle.
-///
-/// This trait provides a way to access the underlying `sqlite3` pointer,
-/// enabling direct use of the SQLite C API for advanced features that
-/// Diesel does not wrap, such as the [session extension](https://www.sqlite.org/sessionintro.html),
-/// [hooks](https://www.sqlite.org/c3ref/update_hook.html), or other advanced APIs.
-///
-/// # Why Diesel Doesn't Wrap These APIs
-///
-/// Certain SQLite features, such as the session extension, are **optional** and only
-/// available when SQLite is compiled with specific flags (e.g., `-DSQLITE_ENABLE_SESSION`
-/// and `-DSQLITE_ENABLE_PREUPDATE_HOOK` for sessions). These compile-time options determine
-/// whether the corresponding C API functions exist in the SQLite library's ABI.
-///
-/// Because Diesel must work with any SQLite library at runtime—including system-provided
-/// libraries that may lack these optional features—it **cannot safely provide wrappers**
-/// for APIs that may or may not exist. Doing so would either:
-///
-/// - Cause **linker errors** at compile time if the user's `libsqlite3-sys` wasn't compiled
-///   with the required flags, or
-/// - Cause **undefined behavior** at runtime if Diesel called functions that don't exist
-///   in the linked library.
-///
-/// While feature gates could theoretically solve this problem, Diesel already has an
-/// extensive API surface with many existing feature combinations. Each new feature gate
-/// adds a **combinatorial explosion** of test configurations that must be validated,
-/// making the library increasingly difficult to maintain. Therefore, exposing the raw
-/// connection is the preferred approach for niche SQLite features.
-///
-/// By exposing the raw connection handle, Diesel allows users who **know** they have
-/// access to a properly configured SQLite build to use these advanced features directly
-/// through their own FFI bindings.
-///
-/// # Safety
-///
-/// The `with_raw_connection` method is marked `unsafe` because improper use
-/// of the raw connection handle can lead to undefined behavior. The caller
-/// must ensure that:
-///
-/// - The connection handle is **not closed** during the callback.
-/// - The connection handle is **not stored** beyond the callback's scope.
-/// - Any state changes made through the raw handle are **compatible** with
-///   Diesel's expectations about the connection state.
-/// - Concurrent access rules are respected (SQLite connections are not thread-safe
-///   unless using serialized threading mode).
-///
-/// # Example
-///
-/// ```rust
-/// use diesel::sqlite::{SqliteConnection, WithRawConnection};
-/// use diesel::Connection;
-///
-/// let mut conn = SqliteConnection::establish(":memory:").unwrap();
-///
-/// // SAFETY: We do not close or store the connection handle,
-/// // and we do not modify state that Diesel depends on.
-/// let version = unsafe {
-///     conn.with_raw_connection(|_raw_conn| {
-///         // Use raw_conn with SQLite C API functions from your own
-///         // `libsqlite3-sys` (native) or `sqlite-wasm-rs` (WASM) dependency.
-///         // For example: ffi::sqlite3session_create(raw_conn, ...)
-///         42 // return a value
-///     })
-/// };
-/// assert_eq!(version, 42);
-/// ```
-///
-/// # Platform Notes
-///
-/// This trait works identically on both native and WASM targets. However,
-/// you must depend on the appropriate FFI crate for your target:
-///
-/// - **Native**: Add `libsqlite3-sys` as a dependency
-/// - **WASM** (`wasm32-unknown-unknown`): Add `sqlite-wasm-rs` as a dependency
-///
-/// Both crates expose a compatible `sqlite3` type that can be used with the
-/// pointer returned by this method.
-#[allow(unsafe_code)]
-pub trait WithRawConnection {
-    /// Provides temporary access to the raw SQLite connection handle.
-    ///
-    /// The callback receives a raw pointer to the underlying `sqlite3` handle,
-    /// which can be used with SQLite C API functions.
-    ///
-    /// # Safety
-    ///
-    /// See the trait-level documentation for safety requirements.
-    unsafe fn with_raw_connection<R, F>(&mut self, f: F) -> R
-    where
-        F: FnOnce(*mut ffi::sqlite3) -> R;
-}
-
-#[allow(unsafe_code)]
-impl WithRawConnection for SqliteConnection {
-    unsafe fn with_raw_connection<R, F>(&mut self, f: F) -> R
-    where
-        F: FnOnce(*mut ffi::sqlite3) -> R,
-    {
-        f(self.raw_connection.internal_connection.as_ptr())
-    }
-}
 
 fn error_message(err_code: libc::c_int) -> &'static str {
     ffi::code_to_str(err_code)
