@@ -236,7 +236,7 @@ impl<TZ: TimeZone> ToSql<TimestamptzSqlite, Sqlite> for DateTime<TZ> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(all(target_family = "wasm", target_os = "unknown"))))]
 #[allow(clippy::unwrap_used)]
 mod tests {
     extern crate chrono;

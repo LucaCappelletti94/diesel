@@ -94,7 +94,12 @@ impl ToSql<sql_types::TimestamptzSqlite, Sqlite> for String {
     }
 }
 
-#[cfg(all(test, feature = "chrono", feature = "time"))]
+#[cfg(all(
+    test,
+    feature = "chrono",
+    feature = "time",
+    not(all(target_family = "wasm", target_os = "unknown"))
+))]
 #[allow(clippy::cast_possible_truncation)] // it's a test
 mod tests {
     extern crate chrono;

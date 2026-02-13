@@ -468,7 +468,7 @@ impl<C: Connection> CustomizeConnection<C, crate::r2d2::Error> for TestCustomize
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(all(target_family = "wasm", target_os = "unknown"))))]
 mod tests {
     use std::sync::Arc;
     use std::sync::mpsc;

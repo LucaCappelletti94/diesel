@@ -53,14 +53,18 @@ pub fn establish_connection() -> SqliteConnection {
 #[wasm_bindgen(js_name = installOpfsSahpool)]
 pub async fn install_opfs_sahpool() {
     use sqlite_wasm_vfs::sahpool::{OpfsSAHPoolCfg, install};
-    install(&OpfsSAHPoolCfg::default(), false).await.unwrap();
+    install::<sqlite_wasm_rs::WasmOsCallback>(&OpfsSAHPoolCfg::default(), false)
+        .await
+        .unwrap();
 }
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 #[wasm_bindgen(js_name = installRelaxedIdb)]
 pub async fn install_relaxed_idb() {
     use sqlite_wasm_vfs::relaxed_idb::{RelaxedIdbCfg, install};
-    install(&RelaxedIdbCfg::default(), false).await.unwrap();
+    install::<sqlite_wasm_rs::WasmOsCallback>(&RelaxedIdbCfg::default(), false)
+        .await
+        .unwrap();
 }
 
 #[wasm_bindgen(js_name = switchVfs)]

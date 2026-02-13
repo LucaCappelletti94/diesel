@@ -1,6 +1,8 @@
 use super::consts::postgres::{
-    CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, MEDIUM_COMPLEX_QUERY_BY_NAME,
+    build_insert_users_query, CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID,
+    MEDIUM_COMPLEX_QUERY_BY_NAME, TRIVIAL_QUERY,
 };
+use super::consts::build_insert_users_params;
 use super::Bencher;
 use rust_postgres::fallible_iterator::FallibleIterator;
 use rust_postgres::types::ToSql;
@@ -42,20 +44,13 @@ fn connection() -> Client {
     client
 }
 
-fn insert_users(size: usize, conn: &mut Client, hair_color_init: impl Fn(usize) -> Option<String>) {
-    let mut query = String::from("INSERT INTO users (name, hair_color) VALUES");
-
-    let mut params = Vec::with_capacity(2 * size);
-
-    for x in 0..size {
-        query += &format!(
-            "{} (${}, ${})",
-            if x == 0 { "" } else { "," },
-            2 * x + 1,
-            2 * x + 2
-        );
-        params.push((format!("User {}", x), hair_color_init(x)));
-    }
+fn insert_users(
+    size: usize,
+    conn: &mut Client,
+    hair_color_init: impl Fn(usize) -> Option<&'static str>,
+) {
+    let query = build_insert_users_query(size);
+    let params = build_insert_users_params(size, hair_color_init);
 
     let params = params
         .iter()
@@ -70,7 +65,7 @@ pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
     insert_users(size, &mut client, |_| None);
 
     let query = client
-        .prepare("SELECT id, name, hair_color FROM users")
+        .prepare(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {
@@ -94,7 +89,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
     insert_users(size, &mut client, |_| None);
 
     let query = client
-        .prepare("SELECT id, name, hair_color FROM users")
+        .prepare(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {
@@ -116,7 +111,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
 pub fn bench_medium_complex_query_by_id(b: &mut Bencher, size: usize) {
     let mut client = connection();
     insert_users(size, &mut client, |i| {
-        Some(if i % 2 == 0 { "black" } else { "brown" }.into())
+        Some(if i % 2 == 0 { "black" } else { "brown" })
     });
 
     let query = client.prepare(MEDIUM_COMPLEX_QUERY_BY_ID).unwrap();
@@ -151,7 +146,7 @@ pub fn bench_medium_complex_query_by_id(b: &mut Bencher, size: usize) {
 pub fn bench_medium_complex_query_by_name(b: &mut Bencher, size: usize) {
     let mut client = connection();
     insert_users(size, &mut client, |i| {
-        Some(if i % 2 == 0 { "black" } else { "brown" }.into())
+        Some(if i % 2 == 0 { "black" } else { "brown" })
     });
 
     let query = client.prepare(MEDIUM_COMPLEX_QUERY_BY_NAME).unwrap();
@@ -186,18 +181,14 @@ pub fn bench_medium_complex_query_by_name(b: &mut Bencher, size: usize) {
 pub fn bench_insert(b: &mut Bencher, size: usize) {
     let mut client = connection();
 
-    b.iter(|| insert_users(size, &mut client, |_| Some(String::from("hair_color"))))
+    b.iter(|| insert_users(size, &mut client, |_| Some("hair_color")))
 }
 
 pub fn loading_associations_sequentially(b: &mut Bencher) {
     let mut client = connection();
 
     insert_users(100, &mut client, |i| {
-        Some(if i % 2 == 0 {
-            String::from("black")
-        } else {
-            String::from("brown")
-        })
+        Some(if i % 2 == 0 { "black" } else { "brown" })
     });
 
     let user_ids = client
@@ -268,7 +259,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
     client.execute(&insert_query as &str, &data).unwrap();
 
     let user_query = client
-        .prepare("SELECT id, name, hair_color FROM users")
+        .prepare(TRIVIAL_QUERY)
         .unwrap();
 
     b.iter(|| {

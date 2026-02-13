@@ -1,6 +1,8 @@
 use super::consts::postgres::{
-    CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID, MEDIUM_COMPLEX_QUERY_BY_NAME,
+    build_insert_users_query, CLEANUP_QUERIES, MEDIUM_COMPLEX_QUERY_BY_ID,
+    MEDIUM_COMPLEX_QUERY_BY_NAME, TRIVIAL_QUERY,
 };
+use super::consts::build_insert_users_params;
 use super::Bencher;
 use futures_util::stream::StreamExt;
 use std::collections::HashMap;
@@ -55,21 +57,10 @@ async fn connection() -> Client {
 async fn insert_users(
     size: usize,
     client: &Client,
-    hair_color_init: impl Fn(usize) -> Option<String>,
+    hair_color_init: impl Fn(usize) -> Option<&'static str>,
 ) {
-    let mut query = String::from("INSERT INTO users (name, hair_color) VALUES");
-
-    let mut params = Vec::with_capacity(2 * size);
-
-    for x in 0..size {
-        query += &format!(
-            "{} (${}, ${})",
-            if x == 0 { "" } else { "," },
-            2 * x + 1,
-            2 * x + 2
-        );
-        params.push((format!("User {}", x), hair_color_init(x)));
-    }
+    let query = build_insert_users_query(size);
+    let params = build_insert_users_params(size, hair_color_init);
 
     let params = params
         .iter()
@@ -85,7 +76,7 @@ pub fn bench_trivial_query_by_id(b: &mut Bencher, size: usize) {
         let client = connection().await;
         insert_users(size, &client, |_| None).await;
         let query = client
-            .prepare("SELECT id, name, hair_color FROM users")
+            .prepare(TRIVIAL_QUERY)
             .await
             .unwrap();
         (client, query)
@@ -118,7 +109,7 @@ pub fn bench_trivial_query_by_name(b: &mut Bencher, size: usize) {
         insert_users(size, &client, |_| None).await;
 
         let query = client
-            .prepare("SELECT id, name, hair_color FROM users")
+            .prepare(TRIVIAL_QUERY)
             .await
             .unwrap();
         (client, query)
@@ -149,7 +140,7 @@ pub fn bench_medium_complex_query_by_id(b: &mut Bencher, size: usize) {
     let (client, query) = runtime.block_on(async {
         let client = connection().await;
         insert_users(size, &client, |i| {
-            Some(if i % 2 == 0 { "black" } else { "brown" }.into())
+            Some(if i % 2 == 0 { "black" } else { "brown" })
         })
         .await;
 
@@ -193,7 +184,7 @@ pub fn bench_medium_complex_query_by_name(b: &mut Bencher, size: usize) {
     let (client, query) = runtime.block_on(async {
         let client = connection().await;
         insert_users(size, &client, |i| {
-            Some(if i % 2 == 0 { "black" } else { "brown" }.into())
+            Some(if i % 2 == 0 { "black" } else { "brown" })
         })
         .await;
 
@@ -241,7 +232,7 @@ pub fn bench_insert(b: &mut Bencher, size: usize) {
 
     b.iter(|| {
         runtime.block_on(async {
-            insert_users(size, &client, |_| Some(String::from("hair_color"))).await;
+            insert_users(size, &client, |_| Some("hair_color")).await;
         })
     })
 }
@@ -251,11 +242,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
     let (client, user_query) = runtime.block_on(async {
         let client = connection().await;
         insert_users(100, &client, |i| {
-            Some(if i % 2 == 0 {
-                String::from("black")
-            } else {
-                String::from("brown")
-            })
+            Some(if i % 2 == 0 { "black" } else { "brown" })
         })
         .await;
 
@@ -329,7 +316,7 @@ pub fn loading_associations_sequentially(b: &mut Bencher) {
         client.execute(&insert_query as &str, &data).await.unwrap();
 
         let user_query = client
-            .prepare("SELECT id, name, hair_color FROM users")
+            .prepare(TRIVIAL_QUERY)
             .await
             .unwrap();
 
