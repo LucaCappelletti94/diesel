@@ -1,7 +1,7 @@
+use diesel_attribute_parser::AttributeSpanWrapper;
 use proc_macro2::{Span, TokenStream};
 use syn::{Data, Ident, Result, spanned::Spanned};
 
-use crate::attrs::AttributeSpanWrapper;
 use crate::util::wrap_in_dummy_mod;
 
 const ERROR_MESSAGE: &str = "this derive can only be used on enums with exclusively unit-variants";
@@ -77,6 +77,7 @@ pub fn derive(item: DeriveEnumInput) -> Result<TokenStream> {
     let struct_ty = syn::Type::Path(syn::TypePath {
         qself: None,
         path: item.ident.into(),
+        attrs: Vec::new(),
     });
     let sql_types = item
         .sql_type_attrs
@@ -147,9 +148,11 @@ impl syn::parse::Parse for DeriveEnumInput {
                 return Err(syn::Error::new(input.span(), ERROR_MESSAGE));
             }
         };
-        let attrs = crate::attrs::parse_attributes::<crate::attrs::StructAttr>(&input.attrs)?;
+        let attrs = diesel_attribute_parser::parse_attributes::<diesel_attribute_parser::StructAttr>(
+            &input.attrs,
+        )?;
         let rename_all = attrs.iter().find_map(|a| {
-            if let crate::attrs::StructAttr::RenameAll(_, r) = &a.item {
+            if let diesel_attribute_parser::StructAttr::RenameAll(_, r) = &a.item {
                 Some(r)
             } else {
                 None
@@ -201,9 +204,11 @@ impl syn::parse::Parse for DeriveEnumInput {
                 .transpose()?
                 .unwrap_or(idx as i128);
             let rust_name = v.ident.clone();
-            let attrs = crate::attrs::parse_attributes::<crate::attrs::FieldAttr>(&v.attrs)?;
+            let attrs = diesel_attribute_parser::parse_attributes::<
+                diesel_attribute_parser::FieldAttr,
+            >(&v.attrs)?;
             let rename_attr = attrs.iter().find_map(|a| {
-                if let crate::attrs::FieldAttr::Rename(_, r) = &a.item {
+                if let diesel_attribute_parser::FieldAttr::Rename(_, r) = &a.item {
                     Some(r.value())
                 } else {
                     None
@@ -222,17 +227,19 @@ impl syn::parse::Parse for DeriveEnumInput {
 
         let sql_type_attrs = attrs
             .into_iter()
-            .filter_map(|a: AttributeSpanWrapper<crate::attrs::StructAttr>| {
-                if let crate::attrs::StructAttr::SqlType(_, path) = a.item {
-                    Some(crate::attrs::AttributeSpanWrapper {
-                        item: path,
-                        attribute_span: a.attribute_span,
-                        ident_span: a.ident_span,
-                    })
-                } else {
-                    None
-                }
-            })
+            .filter_map(
+                |a: AttributeSpanWrapper<diesel_attribute_parser::StructAttr>| {
+                    if let diesel_attribute_parser::StructAttr::SqlType(_, path) = a.item {
+                        Some(diesel_attribute_parser::AttributeSpanWrapper {
+                            item: path,
+                            attribute_span: a.attribute_span,
+                            ident_span: a.ident_span,
+                        })
+                    } else {
+                        None
+                    }
+                },
+            )
             .collect::<Vec<_>>();
         if sql_type_attrs.is_empty() {
             return Err(syn::Error::new(

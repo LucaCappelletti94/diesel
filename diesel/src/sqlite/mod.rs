@@ -6,7 +6,7 @@
 
 mod auto_extension;
 pub(crate) mod backend;
-mod connection;
+pub(crate) mod connection;
 pub mod expression;
 mod function_behavior;
 
@@ -18,6 +18,7 @@ pub use self::auto_extension::cancel_auto_extension;
 pub use self::auto_extension::register_auto_extension;
 pub use self::auto_extension::reset_auto_extension;
 pub use self::backend::{Sqlite, SqliteType};
+pub use self::connection::AutoVacuumMode;
 pub use self::connection::BusyDecision;
 pub use self::connection::CommitDecision;
 pub use self::connection::ProgressDecision;
@@ -31,6 +32,14 @@ pub use self::connection::SqliteValue;
 pub use self::connection::authorizer;
 pub use self::connection::sqlite_blob::SqliteReadOnlyBlob;
 pub use self::connection::{AuthorizerContext, AuthorizerDecision};
+pub use self::connection::{CollationNeededContext, SqliteTextRep};
+#[cfg(feature = "i-implement-a-third-party-backend-and-opt-into-breaking-changes")]
+pub use self::connection::{
+    OwnedSqliteBindValue, SqliteBindCollector, SqliteBindCollectorData, SqliteBindValueRef,
+};
+pub use self::connection::{
+    SqliteChangeEvent, SqliteChangeOp, SqliteChangeOps, SqliteUpdateRouter,
+};
 #[cfg(feature = "__sqlite-shared")]
 pub use self::function_behavior::SqliteFunctionBehavior;
 pub use self::query_builder::SqliteQueryBuilder;

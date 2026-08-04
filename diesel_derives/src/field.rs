@@ -1,8 +1,7 @@
+use diesel_attribute_parser::{AttributeSpanWrapper, FieldAttr, SqlIdentifier, parse_attributes};
 use proc_macro2::{Span, TokenStream};
 use syn::spanned::Spanned;
 use syn::{Expr, Field as SynField, Ident, Index, Result, Type};
-
-use crate::attrs::{AttributeSpanWrapper, FieldAttr, SqlIdentifier, parse_attributes};
 
 pub struct Field {
     pub ty: Type,
@@ -221,7 +220,7 @@ fn check_serde_as_supported_type(ty: &Type, attr_name: &str) -> Result<()> {
             ty,
             format!("`{attr_name}` does not support pointer types"),
         )),
-        Type::BareFn(_) => Err(syn::Error::new_spanned(
+        Type::FnPtr(_) => Err(syn::Error::new_spanned(
             ty,
             format!("`{attr_name}` does not support function pointer types"),
         )),

@@ -6,6 +6,7 @@ use sqlite_wasm_rs as ffi;
 
 pub mod authorizer;
 mod bind_collector;
+mod collation_needed;
 mod functions;
 mod hooks;
 mod limits;
@@ -18,18 +19,27 @@ mod sqlite_value;
 mod statement_iterator;
 mod stmt;
 mod trace;
+mod update_hook;
 
 pub use self::authorizer::{AuthorizerContext, AuthorizerDecision};
+#[diesel_derives::__diesel_public_if(
+    feature = "i-implement-a-third-party-backend-and-opt-into-breaking-changes"
+)]
 pub(in crate::sqlite) use self::bind_collector::SqliteBindCollector;
 pub use self::bind_collector::SqliteBindValue;
+#[cfg(feature = "i-implement-a-third-party-backend-and-opt-into-breaking-changes")]
+pub use self::bind_collector::{OwnedSqliteBindValue, SqliteBindCollectorData, SqliteBindValueRef};
+pub use self::collation_needed::{CollationNeededContext, SqliteTextRep};
 pub use self::limits::SqliteLimit;
+use self::raw::RawConnection;
 pub use self::serialized_database::SerializedDatabase;
 pub use self::sqlite_value::SqliteValue;
-pub use self::trace::{SqliteTraceEvent, SqliteTraceFlags};
-
-use self::raw::RawConnection;
 use self::statement_iterator::*;
 use self::stmt::{Statement, StatementUse};
+pub use self::trace::{SqliteTraceEvent, SqliteTraceFlags};
+pub use self::update_hook::{
+    SqliteChangeEvent, SqliteChangeOp, SqliteChangeOps, SqliteUpdateRouter,
+};
 use super::SqliteAggregateFunction;
 use crate::connection::instrumentation::{DynInstrumentation, StrQueryHelper};
 use crate::connection::statement_cache::StatementCache;
@@ -37,13 +47,17 @@ use crate::connection::*;
 use crate::deserialize::{FromSqlRow, StaticallySizedRow};
 use crate::expression::QueryMetadata;
 use crate::query_builder::*;
+use crate::query_dsl::RunQueryDslSupport;
+use crate::query_source::{ColumnHasTable, NamedTable};
 use crate::result::*;
 use crate::serialize::ToSql;
 use crate::sql_types::{HasSqlType, TypeMetadata};
 use crate::sqlite::{Sqlite, SqliteFunctionBehavior};
 use alloc::string::String;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::ffi as libc;
+use core::marker::PhantomData;
 use core::num::NonZeroI64;
 
 /// Connections for the SQLite backend. Unlike other backends, SQLite supported
@@ -366,6 +380,31 @@ pub enum BusyDecision {
     GiveUp,
 }
 
+/// The `auto_vacuum` mode of a database, controlling whether and when SQLite
+/// reclaims freed pages back to the file.
+///
+/// The mode is stored in the database file, not the connection. [`Full`] and
+/// [`Incremental`] can be switched between at any time, but changing from or to
+/// [`None`] only takes effect on a database with no tables yet, or after a
+/// subsequent `VACUUM` rewrites the file.
+///
+/// [`None`]: AutoVacuumMode::None
+/// [`Full`]: AutoVacuumMode::Full
+/// [`Incremental`]: AutoVacuumMode::Incremental
+#[derive(Debug, Clone, Copy, PartialEq, Eq, crate::types::Enum)]
+#[diesel(sql_type = crate::sql_types::Integer)]
+#[non_exhaustive]
+#[repr(i32)]
+pub enum AutoVacuumMode {
+    /// Freed pages stay on the freelist and the file never shrinks (default).
+    None = 0,
+    /// Freed pages are reclaimed and the file truncated at every commit.
+    Full = 1,
+    /// Freelist bookkeeping is kept, pages are reclaimed only when
+    /// `incremental_vacuum` runs.
+    Incremental = 2,
+}
+
 impl SqliteConnection {
     /// Run a transaction with `BEGIN IMMEDIATE`
     ///
@@ -499,17 +538,14 @@ impl SqliteConnection {
     ) -> Result<sqlite_blob::SqliteReadOnlyBlob<'conn>, Error>
     where
         'query: 'conn,
-        U: crate::Column,
-        U::Table: nodes::StaticQueryFragment,
-        <U::Table as nodes::StaticQueryFragment>::Component: HasDatabaseAndTableName,
+        U: ColumnHasTable,
+        U::Table: NamedTable,
     {
-        use crate::query_builder::nodes::StaticQueryFragment;
-        // this mostly exists for a more natural way to call this function
-        let _ = blob_column;
+        let table = blob_column.table();
 
-        let database_name = U::Table::STATIC_COMPONENT.database_name().unwrap_or("main");
-        let column_name = U::NAME;
-        let table_name = U::Table::STATIC_COMPONENT.table_name();
+        let database_name = table.schema().unwrap_or("main");
+        let column_name = blob_column.name();
+        let table_name = table.table();
 
         self.raw_connection
             .blob_open(database_name, table_name, column_name, row_id)
@@ -1215,6 +1251,53 @@ impl SqliteConnection {
             .get_db_config_bool(raw::SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE)
     }
 
+    /// Attach the database file at `path` under `schema_name`.
+    ///
+    /// Runs [`ATTACH DATABASE ? AS ?`](https://www.sqlite.org/lang_attach.html) with
+    /// both operands bound as parameters, so no SQL string escaping is needed.
+    /// Diesel always opens connections with `SQLITE_OPEN_URI`, so a path beginning
+    /// with `file:` is interpreted as a URI exactly as it is in
+    /// [`SqliteConnection::establish`].
+    ///
+    /// A missing file is created as an empty database unless
+    /// [`set_attach_create_enabled(false)`][Self::set_attach_create_enabled] is set,
+    /// and [`set_attach_write_enabled(false)`][Self::set_attach_write_enabled] attaches
+    /// read-only. The attach count is bounded (10 by default). A transaction across the
+    /// main and an attached file is crash-atomic per file only under WAL.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # include!("../../doctest_setup.rs");
+    /// #
+    /// # fn main() {
+    /// #     run_test().unwrap();
+    /// # }
+    /// #
+    /// # fn run_test() -> QueryResult<()> {
+    /// #     let conn = &mut SqliteConnection::establish(":memory:").unwrap();
+    /// conn.attach_database(":memory:", "aux")?;
+    /// conn.detach_database("aux")?;
+    /// #     Ok(())
+    /// # }
+    /// ```
+    pub fn attach_database(&mut self, path: &str, schema_name: &str) -> QueryResult<()> {
+        use crate::query_dsl::RunQueryDsl;
+        AttachDatabase { path, schema_name }
+            .execute(self)
+            .map(|_| ())
+    }
+
+    /// Detach the database previously attached under `schema_name`.
+    ///
+    /// Runs [`DETACH DATABASE ?`](https://www.sqlite.org/lang_detach.html) with the
+    /// schema name bound as a parameter. Detaching a schema still in use fails with an
+    /// ordinary error.
+    pub fn detach_database(&mut self, schema_name: &str) -> QueryResult<()> {
+        use crate::query_dsl::RunQueryDsl;
+        DetachDatabase { schema_name }.execute(self).map(|_| ())
+    }
+
     /// Enable or disable trigger execution.
     ///
     /// When disabled, triggers will not fire for any DML operations.
@@ -1309,6 +1392,118 @@ impl SqliteConnection {
             .get_db_config_bool(ffi::SQLITE_DBCONFIG_DQS_DDL)
     }
 
+    /// Read the [`auto_vacuum`](AutoVacuumMode) mode of a database.
+    ///
+    /// `schema` selects an attached database by name, `None` reads `main`.
+    ///
+    /// ```rust
+    /// # include!("../../doctest_setup.rs");
+    /// # fn main() {
+    /// #     run_test().unwrap();
+    /// # }
+    /// # fn run_test() -> QueryResult<()> {
+    /// use diesel::sqlite::AutoVacuumMode;
+    /// let conn = &mut SqliteConnection::establish(":memory:").unwrap();
+    /// assert_eq!(conn.auto_vacuum(None)?, AutoVacuumMode::None);
+    /// #     Ok(())
+    /// # }
+    /// ```
+    pub fn auto_vacuum(&mut self, schema: Option<&str>) -> QueryResult<AutoVacuumMode> {
+        use crate::query_dsl::RunQueryDsl;
+        let query: Pragma<'_, crate::sql_types::Integer> = Pragma::new("auto_vacuum", schema);
+        query.get_result(self)
+    }
+
+    /// Set the [`auto_vacuum`](AutoVacuumMode) mode of a database.
+    ///
+    /// `schema` selects an attached database by name, `None` targets `main`.
+    /// Changing from or to [`AutoVacuumMode::None`] only takes effect on a
+    /// database with no tables yet, or after a subsequent `VACUUM`.
+    ///
+    /// ```rust
+    /// # include!("../../doctest_setup.rs");
+    /// # fn main() {
+    /// #     run_test().unwrap();
+    /// # }
+    /// # fn run_test() -> QueryResult<()> {
+    /// use diesel::sqlite::AutoVacuumMode;
+    /// let conn = &mut SqliteConnection::establish(":memory:").unwrap();
+    /// conn.set_auto_vacuum(None, AutoVacuumMode::Incremental)?;
+    /// assert_eq!(conn.auto_vacuum(None)?, AutoVacuumMode::Incremental);
+    /// #     Ok(())
+    /// # }
+    /// ```
+    pub fn set_auto_vacuum(
+        &mut self,
+        schema: Option<&str>,
+        mode: AutoVacuumMode,
+    ) -> QueryResult<()> {
+        use crate::query_dsl::RunQueryDsl;
+        // #[repr(i32)] guarantees the discriminant fits exactly in i32.
+        SetPragmaInt {
+            schema,
+            name: "auto_vacuum",
+            value: mode as i32,
+        }
+        .execute(self)
+        .map(|_| ())
+    }
+
+    /// Total number of pages in a database, via `PRAGMA page_count`.
+    ///
+    /// `schema` selects an attached database by name, `None` reads `main`.
+    /// Multiply by the page size for the size the database accounts for.
+    ///
+    /// ```rust
+    /// # include!("../../doctest_setup.rs");
+    /// # fn main() {
+    /// #     run_test().unwrap();
+    /// # }
+    /// # fn run_test() -> QueryResult<()> {
+    /// use diesel::connection::SimpleConnection;
+    /// let conn = &mut SqliteConnection::establish(":memory:").unwrap();
+    /// // An empty database occupies no pages until something is written.
+    /// assert_eq!(conn.page_count(None)?, 0);
+    /// conn.batch_execute("CREATE TABLE items (id INTEGER PRIMARY KEY)")?;
+    /// assert!(conn.page_count(None)? > 0);
+    /// #     Ok(())
+    /// # }
+    /// ```
+    pub fn page_count(&mut self, schema: Option<&str>) -> QueryResult<i64> {
+        self.read_pragma_count("page_count", schema)
+    }
+
+    /// Unused pages on a database's freelist, via `PRAGMA freelist_count`.
+    ///
+    /// `schema` selects an attached database by name, `None` reads `main`. A
+    /// growing freelist is reclaimable space, freed by `VACUUM`.
+    ///
+    /// ```rust
+    /// # include!("../../doctest_setup.rs");
+    /// # fn main() {
+    /// #     run_test().unwrap();
+    /// # }
+    /// # fn run_test() -> QueryResult<()> {
+    /// let conn = &mut SqliteConnection::establish(":memory:").unwrap();
+    /// assert_eq!(conn.freelist_count(None)?, 0);
+    /// #     Ok(())
+    /// # }
+    /// ```
+    pub fn freelist_count(&mut self, schema: Option<&str>) -> QueryResult<i64> {
+        self.read_pragma_count("freelist_count", schema)
+    }
+
+    fn read_pragma_count(
+        &mut self,
+        pragma: &'static str,
+        schema: Option<&str>,
+    ) -> QueryResult<i64> {
+        use crate::query_dsl::RunQueryDsl;
+
+        let query: Pragma<'_, crate::sql_types::BigInt> = Pragma::new(pragma, schema);
+        query.get_result(self)
+    }
+
     fn register_diesel_sql_functions(&self) -> QueryResult<()> {
         use crate::sql_types::{Integer, Text};
 
@@ -1351,40 +1546,108 @@ fn error_message(err_code: libc::c_int) -> &'static str {
     ffi::code_to_str(err_code)
 }
 
-mod private {
-    #[doc(hidden)]
-    pub trait HasDatabaseAndTableName {
-        fn database_name(&self) -> Option<&'static str>;
-        fn table_name(&self) -> &'static str;
+#[derive(QueryId)]
+struct AttachDatabase<'a> {
+    path: &'a str,
+    schema_name: &'a str,
+}
+
+impl QueryFragment<Sqlite> for AttachDatabase<'_> {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("ATTACH DATABASE ");
+        out.push_bind_param::<crate::sql_types::Text, _>(self.path)?;
+        out.push_sql(" AS ");
+        out.push_bind_param::<crate::sql_types::Text, _>(self.schema_name)?;
+        Ok(())
     }
+}
 
-    impl HasDatabaseAndTableName for crate::query_builder::nodes::Identifier<'static> {
-        fn database_name(&self) -> Option<&'static str> {
-            None
-        }
+impl RunQueryDslSupport for AttachDatabase<'_> {}
 
-        fn table_name(&self) -> &'static str {
-            self.0
-        }
+#[derive(QueryId)]
+struct DetachDatabase<'a> {
+    schema_name: &'a str,
+}
+
+impl QueryFragment<Sqlite> for DetachDatabase<'_> {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("DETACH DATABASE ");
+        out.push_bind_param::<crate::sql_types::Text, _>(self.schema_name)?;
+        Ok(())
     }
+}
 
-    impl<M> HasDatabaseAndTableName
-        for crate::query_builder::nodes::InfixNode<
-            crate::query_builder::nodes::Identifier<'static>,
-            crate::query_builder::nodes::Identifier<'static>,
-            M,
-        >
-    {
-        fn database_name(&self) -> Option<&'static str> {
-            Some(self.lhs.0)
-        }
+impl RunQueryDslSupport for DetachDatabase<'_> {}
 
-        fn table_name(&self) -> &'static str {
-            self.rhs.0
+// A `PRAGMA` accepts no bind parameters, neither for the schema it targets nor for the
+// value it assigns, so the schema is rendered as a quoted identifier by the query
+// builder. `name` is always a constant chosen here, never caller data.
+struct Pragma<'a, ST> {
+    schema: Option<&'a str>,
+    name: &'static str,
+    sql_type: PhantomData<ST>,
+}
+
+impl<'a, ST> Pragma<'a, ST> {
+    fn new(name: &'static str, schema: Option<&'a str>) -> Self {
+        Pragma {
+            schema,
+            name,
+            sql_type: PhantomData,
         }
     }
 }
-pub(crate) use self::private::HasDatabaseAndTableName;
+
+impl<ST> QueryFragment<Sqlite> for Pragma<'_, ST> {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("PRAGMA ");
+        out.push_identifier(self.schema.unwrap_or("main"))?;
+        out.push_sql(".");
+        out.push_sql(self.name);
+        Ok(())
+    }
+}
+
+// The schema name is runtime data, so the rendered SQL is not determined by the type.
+impl<ST> QueryId for Pragma<'_, ST> {
+    type QueryId = ();
+
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+impl<ST> Query for Pragma<'_, ST> {
+    type SqlType = ST;
+}
+
+impl<ST> RunQueryDslSupport for Pragma<'_, ST> {}
+
+// `PRAGMA name = value` takes no bind parameter for the value either, so the integer is
+// rendered as a literal.
+struct SetPragmaInt<'a> {
+    schema: Option<&'a str>,
+    name: &'static str,
+    value: i32,
+}
+
+impl QueryFragment<Sqlite> for SetPragmaInt<'_> {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("PRAGMA ");
+        out.push_identifier(self.schema.unwrap_or("main"))?;
+        out.push_sql(".");
+        out.push_sql(self.name);
+        out.push_sql(" = ");
+        out.push_sql(&self.value.to_string());
+        Ok(())
+    }
+}
+
+impl QueryId for SetPragmaInt<'_> {
+    type QueryId = ();
+
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+impl RunQueryDslSupport for SetPragmaInt<'_> {}
 
 #[cfg(test)]
 mod tests {
@@ -3178,10 +3441,10 @@ mod tests {
     // These ATTACH tests need a real filesystem (temp files), which is not
     // available on the wasm target, where SQLite is in-memory only.
     #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
-    fn temp_db_path(tag: &str) -> std::path::PathBuf {
-        let mut path = std::env::temp_dir();
-        path.push(format!("diesel_attach_{}_{}.db", std::process::id(), tag));
-        path
+    fn temp_db_path(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        (dir, path)
     }
 
     #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
@@ -3195,21 +3458,19 @@ mod tests {
             return;
         }
 
-        let path = temp_db_path("create");
-        let _ = std::fs::remove_file(&path);
-        let attach = format!("ATTACH DATABASE '{}' AS aux_create", path.display());
+        let (_dir, path) = temp_db_path("create.db");
 
         // Disabled: attaching a path that does not exist yet must fail.
-        assert!(crate::sql_query(&attach).execute(conn).is_err());
+        assert!(
+            conn.attach_database(path.to_str().unwrap(), "aux_create")
+                .is_err()
+        );
 
         // Enabled: the same ATTACH now creates and opens the file.
         conn.set_attach_create_enabled(true).unwrap();
-        crate::sql_query(&attach).execute(conn).unwrap();
-        crate::sql_query("DETACH DATABASE aux_create")
-            .execute(conn)
+        conn.attach_database(path.to_str().unwrap(), "aux_create")
             .unwrap();
-
-        let _ = std::fs::remove_file(&path);
+        conn.detach_database("aux_create").unwrap();
     }
 
     #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
@@ -3225,38 +3486,264 @@ mod tests {
         }
 
         // Seed an existing on-disk database with a table to write into.
-        let path = temp_db_path("write");
-        let _ = std::fs::remove_file(&path);
+        let (_dir, path) = temp_db_path("write.db");
         {
             let mut seed = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
             crate::sql_query("CREATE TABLE t (id INTEGER)")
                 .execute(&mut seed)
                 .unwrap();
         }
-        let attach = format!("ATTACH DATABASE '{}' AS aux_write", path.display());
 
         // Disabled: the attached database is opened read-only, so writes fail.
-        crate::sql_query(&attach).execute(conn).unwrap();
+        conn.attach_database(path.to_str().unwrap(), "aux_write")
+            .unwrap();
         assert!(
             crate::sql_query("INSERT INTO aux_write.t (id) VALUES (1)")
                 .execute(conn)
                 .is_err()
         );
-        crate::sql_query("DETACH DATABASE aux_write")
-            .execute(conn)
-            .unwrap();
+        conn.detach_database("aux_write").unwrap();
 
         // Enabled: the attached database is writable again.
         conn.set_attach_write_enabled(true).unwrap();
-        crate::sql_query(&attach).execute(conn).unwrap();
+        conn.attach_database(path.to_str().unwrap(), "aux_write")
+            .unwrap();
         crate::sql_query("INSERT INTO aux_write.t (id) VALUES (1)")
             .execute(conn)
             .unwrap();
-        crate::sql_query("DETACH DATABASE aux_write")
+        conn.detach_database("aux_write").unwrap();
+    }
+
+    // Tables used by the ATTACH round-trip tests below. Their CREATE statements are
+    // DDL (raw SQL), but rows and reads go through the typed query DSL.
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    table! {
+        attach_owners (id) {
+            id -> Integer,
+            name -> Text,
+        }
+    }
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    table! {
+        aux.attach_pets (id) {
+            id -> Integer,
+            owner_id -> Integer,
+            name -> Text,
+        }
+    }
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    allow_tables_to_appear_in_same_query!(attach_owners, attach_pets);
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    table! {
+        attach_marker (id) {
+            id -> Integer,
+        }
+    }
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    table! {
+        ro.readonly_marker (id) {
+            id -> Integer,
+        }
+    }
+
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    #[diesel_test_helper::test]
+    fn attach_database_supports_cross_schema_join_then_detach() {
+        use crate::connection::SimpleConnection;
+
+        let conn = &mut connection();
+
+        conn.attach_database(":memory:", "aux").unwrap();
+
+        // Schema-qualified CREATE is DDL and stays raw SQL. The rows and the join
+        // below use the typed query DSL.
+        conn.batch_execute(
+            "CREATE TABLE attach_owners (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+             CREATE TABLE aux.attach_pets (id INTEGER PRIMARY KEY, owner_id INTEGER, name TEXT NOT NULL);",
+        )
+        .unwrap();
+
+        crate::insert_into(attach_owners::table)
+            .values(&[
+                (attach_owners::id.eq(1), attach_owners::name.eq("Sean")),
+                (attach_owners::id.eq(2), attach_owners::name.eq("Tess")),
+            ])
+            .execute(conn)
+            .unwrap();
+        crate::insert_into(attach_pets::table)
+            .values((
+                attach_pets::id.eq(1),
+                attach_pets::owner_id.eq(1),
+                attach_pets::name.eq("Ferris"),
+            ))
             .execute(conn)
             .unwrap();
 
-        let _ = std::fs::remove_file(&path);
+        let pet_owner = attach_owners::table
+            .inner_join(attach_pets::table.on(attach_pets::owner_id.eq(attach_owners::id)))
+            .filter(attach_pets::name.eq("Ferris"))
+            .select(attach_owners::name)
+            .get_result::<String>(conn)
+            .unwrap();
+        assert_eq!(pet_owner, "Sean");
+
+        conn.detach_database("aux").unwrap();
+
+        // The attached schema is gone, so querying it now fails.
+        assert!(
+            attach_pets::table
+                .select(attach_pets::name)
+                .get_result::<String>(conn)
+                .is_err()
+        );
+    }
+
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    #[diesel_test_helper::test]
+    fn attach_database_binds_path_verbatim_without_quoting() {
+        // A single quote in the path would break a hand-assembled ATTACH statement.
+        // Bound parameters take the path verbatim.
+        let (_dir, path) = temp_db_path("o'brien.db");
+
+        conn_attach_roundtrip(&path);
+
+        // The table created through ATTACH persisted to the literal file, so a
+        // fresh connection to that exact path can read it.
+        let mut direct = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        let count = attach_marker::table
+            .count()
+            .get_result::<i64>(&mut direct)
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    fn conn_attach_roundtrip(path: &std::path::Path) {
+        use crate::connection::SimpleConnection;
+
+        let conn = &mut connection();
+        conn.attach_database(path.to_str().unwrap(), "verbatim")
+            .unwrap();
+        conn.batch_execute("CREATE TABLE verbatim.attach_marker (id INTEGER PRIMARY KEY)")
+            .unwrap();
+        conn.detach_database("verbatim").unwrap();
+    }
+
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    #[diesel_test_helper::test]
+    fn attach_database_interprets_file_uri_query_parameters() {
+        // Seed a database with a row to read through the attached schema.
+        let (_dir, path) = temp_db_path("uri_seed.db");
+        {
+            let mut seed = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+            crate::sql_query("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+                .execute(&mut seed)
+                .unwrap();
+            crate::sql_query("INSERT INTO t (id) VALUES (1)")
+                .execute(&mut seed)
+                .unwrap();
+        }
+
+        // Attach with a `file:` URI and `mode=ro`. If SQLite treated the bound
+        // string as a literal filename it would fail to find the file; interpreting
+        // it as a URI opens the real file in read-only mode instead.
+        let uri = format!("file:{}?mode=ro", path.display());
+        let conn = &mut connection();
+        conn.attach_database(&uri, "ro_schema").unwrap();
+
+        // Read from the attached schema: proves the ATTACH opened a real file.
+        let id: i64 = sql::<crate::sql_types::BigInt>("SELECT id FROM ro_schema.t")
+            .get_result(conn)
+            .unwrap();
+        assert_eq!(id, 1);
+
+        // Write fails: the URI `mode=ro` parameter took effect.
+        assert!(
+            crate::sql_query("INSERT INTO ro_schema.t (id) VALUES (2)")
+                .execute(conn)
+                .is_err()
+        );
+
+        conn.detach_database("ro_schema").unwrap();
+    }
+
+    #[diesel_test_helper::test]
+    fn attach_and_detach_surface_errors_without_panicking() {
+        let conn = &mut connection();
+
+        // A duplicate schema name on attach is an error, not a panic.
+        conn.attach_database(":memory:", "dup").unwrap();
+        assert!(conn.attach_database(":memory:", "dup").is_err());
+        conn.detach_database("dup").unwrap();
+
+        // Detaching an unknown schema is likewise an error. Detaching one still in
+        // use cannot occur through the safe API: an in-flight iterator holds
+        // `&mut conn`, so no detach can overlap it.
+        assert!(conn.detach_database("never_attached").is_err());
+    }
+
+    #[diesel_test_helper::test]
+    fn attach_database_binds_schema_name_verbatim_without_identifier_quoting() {
+        use crate::connection::SimpleConnection;
+
+        let conn = &mut connection();
+
+        // A space or quote in the schema name would need identifier quoting in a
+        // hand-assembled statement. Bound as a parameter it is taken verbatim. The
+        // reference below stays raw SQL: such a schema is not expressible via `table!`.
+        let schema = "weird 'schema";
+        conn.attach_database(":memory:", schema).unwrap();
+
+        conn.batch_execute(
+            r#"CREATE TABLE "weird 'schema".t (id INTEGER PRIMARY KEY);
+             INSERT INTO "weird 'schema".t (id) VALUES (7);"#,
+        )
+        .unwrap();
+        let id = sql::<Integer>(r#"SELECT id FROM "weird 'schema".t"#)
+            .get_result::<i32>(conn)
+            .unwrap();
+        assert_eq!(id, 7);
+
+        conn.detach_database(schema).unwrap();
+    }
+
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    #[diesel_test_helper::test]
+    fn attach_database_honors_create_and_write_hardening_knobs() {
+        use crate::connection::SimpleConnection;
+
+        let conn = &mut connection();
+
+        // ATTACH_CREATE and ATTACH_WRITE need SQLite 3.49.0+, so skip on older libraries.
+        if conn.set_attach_create_enabled(false).is_err() {
+            return;
+        }
+
+        // Create disabled: attaching a nonexistent path fails and materializes nothing.
+        let (_dir_missing, missing) = temp_db_path("nocreate.db");
+        assert!(
+            conn.attach_database(missing.to_str().unwrap(), "missing")
+                .is_err()
+        );
+        assert!(!missing.exists());
+
+        // Write disabled: an existing database attaches read-only, so writes fail.
+        conn.set_attach_write_enabled(false).unwrap();
+        let (_dir_existing, existing) = temp_db_path("readonly.db");
+        {
+            let mut seed = SqliteConnection::establish(existing.to_str().unwrap()).unwrap();
+            seed.batch_execute("CREATE TABLE readonly_marker (id INTEGER)")
+                .unwrap();
+        }
+        conn.attach_database(existing.to_str().unwrap(), "ro")
+            .unwrap();
+        assert!(
+            crate::insert_into(readonly_marker::table)
+                .values(readonly_marker::id.eq(1))
+                .execute(conn)
+                .is_err()
+        );
+        conn.detach_database("ro").unwrap();
     }
 
     // ---- DIRECTONLY / INNOCUOUS function behavior tests ----
@@ -3319,5 +3806,226 @@ mod tests {
         // Querying the view should succeed because the function is INNOCUOUS
         let result = crate::sql_query("SELECT val FROM innocuous_view").execute(conn);
         assert!(result.is_ok());
+    }
+
+    #[diesel_test_helper::test]
+    fn auto_vacuum_all_modes_roundtrip_on_fresh_database() {
+        for mode in [
+            AutoVacuumMode::None,
+            AutoVacuumMode::Full,
+            AutoVacuumMode::Incremental,
+        ] {
+            let conn = &mut connection();
+            conn.set_auto_vacuum(None, mode).unwrap();
+            assert_eq!(mode, conn.auto_vacuum(None).unwrap());
+        }
+    }
+
+    #[diesel_test_helper::test]
+    fn auto_vacuum_incremental_sticks_across_schema_creation() {
+        let conn = &mut connection();
+        conn.set_auto_vacuum(None, AutoVacuumMode::Incremental)
+            .unwrap();
+        assert_eq!(AutoVacuumMode::Incremental, conn.auto_vacuum(None).unwrap());
+
+        crate::sql_query("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+            .execute(conn)
+            .unwrap();
+        assert_eq!(
+            AutoVacuumMode::Incremental,
+            conn.auto_vacuum(None).unwrap(),
+            "the mode survives once the schema exists"
+        );
+    }
+
+    #[diesel_test_helper::test]
+    fn auto_vacuum_change_from_none_requires_vacuum_on_populated_database() {
+        let conn = &mut connection();
+        crate::sql_query("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+            .execute(conn)
+            .unwrap();
+        crate::sql_query("INSERT INTO t (id) VALUES (1)")
+            .execute(conn)
+            .unwrap();
+        assert_eq!(AutoVacuumMode::None, conn.auto_vacuum(None).unwrap());
+
+        // On a populated database the switch away from `None` is silently
+        // deferred until a full rewrite.
+        conn.set_auto_vacuum(None, AutoVacuumMode::Full).unwrap();
+        assert_eq!(
+            AutoVacuumMode::None,
+            conn.auto_vacuum(None).unwrap(),
+            "the change does not take effect without a VACUUM"
+        );
+
+        crate::sql_query("VACUUM").execute(conn).unwrap();
+        assert_eq!(
+            AutoVacuumMode::Full,
+            conn.auto_vacuum(None).unwrap(),
+            "VACUUM rewrites the file and applies the mode"
+        );
+    }
+
+    #[diesel_test_helper::test]
+    fn auto_vacuum_targets_the_named_attached_database() {
+        let conn = &mut connection();
+        crate::sql_query("ATTACH DATABASE ':memory:' AS aux")
+            .execute(conn)
+            .unwrap();
+
+        conn.set_auto_vacuum(Some("aux"), AutoVacuumMode::Full)
+            .unwrap();
+        assert_eq!(AutoVacuumMode::Full, conn.auto_vacuum(Some("aux")).unwrap());
+        assert_eq!(
+            AutoVacuumMode::None,
+            conn.auto_vacuum(None).unwrap(),
+            "main keeps its own default"
+        );
+    }
+
+    #[diesel_test_helper::test]
+    fn auto_vacuum_schema_name_with_double_quote_is_handled() {
+        let conn = &mut connection();
+        let schema = r#"we"ird"#;
+        crate::sql_query(alloc::format!(
+            r#"ATTACH DATABASE ':memory:' AS "{}""#,
+            schema.replace('"', "\"\"")
+        ))
+        .execute(conn)
+        .unwrap();
+
+        conn.set_auto_vacuum(Some(schema), AutoVacuumMode::Incremental)
+            .unwrap();
+        assert_eq!(
+            AutoVacuumMode::Incremental,
+            conn.auto_vacuum(Some(schema)).unwrap()
+        );
+    }
+
+    table! {
+        pragma_probe (id) {
+            id -> Integer,
+            payload -> Text,
+        }
+    }
+
+    table! {
+        aux.aux_pragma_probe (id) {
+            id -> Integer,
+            payload -> Text,
+        }
+    }
+
+    const PROBE_TABLE: &str =
+        "CREATE TABLE pragma_probe (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)";
+
+    // Large enough to spill onto overflow pages, so the database outgrows a single page
+    // and leaves reclaimable pages behind once the row is deleted.
+    fn overflowing_payload() -> String {
+        "x".repeat(64 * 1024)
+    }
+
+    fn insert_overflowing_row(conn: &mut SqliteConnection) {
+        crate::insert_into(pragma_probe::table)
+            .values((
+                pragma_probe::id.eq(1),
+                pragma_probe::payload.eq(overflowing_payload()),
+            ))
+            .execute(conn)
+            .unwrap();
+    }
+
+    #[diesel_test_helper::test]
+    fn page_count_is_positive_and_grows() {
+        let conn = &mut connection();
+        conn.batch_execute(PROBE_TABLE).unwrap();
+        let initial = conn.page_count(None).unwrap();
+        assert!(initial > 0, "an initialized database has at least one page");
+
+        insert_overflowing_row(conn);
+
+        assert!(
+            conn.page_count(None).unwrap() > initial,
+            "a row spanning overflow pages grows the page count"
+        );
+    }
+
+    #[diesel_test_helper::test]
+    fn freelist_count_tracks_reclaimable_space() {
+        let conn = &mut connection();
+        assert_eq!(
+            0,
+            conn.freelist_count(None).unwrap(),
+            "a fresh database has an empty freelist"
+        );
+
+        conn.batch_execute(PROBE_TABLE).unwrap();
+        insert_overflowing_row(conn);
+
+        crate::delete(pragma_probe::table).execute(conn).unwrap();
+        assert!(
+            conn.freelist_count(None).unwrap() > 0,
+            "deleting the row leaves reclaimable pages on the freelist"
+        );
+
+        // `VACUUM` has no query DSL equivalent.
+        crate::sql_query("VACUUM").execute(conn).unwrap();
+        assert_eq!(
+            0,
+            conn.freelist_count(None).unwrap(),
+            "VACUUM reclaims the freelist"
+        );
+    }
+
+    #[diesel_test_helper::test]
+    fn schema_targets_the_named_attached_database() {
+        let conn = &mut connection();
+        conn.batch_execute(PROBE_TABLE).unwrap();
+        conn.attach_database(":memory:", "aux").unwrap();
+        conn.batch_execute(
+            "CREATE TABLE aux.aux_pragma_probe (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)",
+        )
+        .unwrap();
+        crate::insert_into(aux_pragma_probe::table)
+            .values((
+                aux_pragma_probe::id.eq(1),
+                aux_pragma_probe::payload.eq(overflowing_payload()),
+            ))
+            .execute(conn)
+            .unwrap();
+
+        let main_pages = conn.page_count(None).unwrap();
+        let aux_pages = conn.page_count(Some("aux")).unwrap();
+        assert!(
+            aux_pages > main_pages,
+            "the attached database holds the data, main stays small"
+        );
+        assert_eq!(
+            main_pages,
+            conn.page_count(Some("main")).unwrap(),
+            "an explicit main matches the default"
+        );
+    }
+
+    #[diesel_test_helper::test]
+    fn schema_name_with_backtick_is_escaped() {
+        // The query builder quotes SQLite identifiers with backticks, so a backtick is
+        // the character that has to be doubled.
+        let conn = &mut connection();
+        let schema = "back`tick";
+        conn.attach_database(":memory:", schema).unwrap();
+        conn.batch_execute("CREATE TABLE `back``tick`.probe (id INTEGER PRIMARY KEY)")
+            .unwrap();
+
+        assert!(conn.page_count(Some(schema)).unwrap() > 0);
+        assert_eq!(0, conn.freelist_count(Some(schema)).unwrap());
+    }
+
+    #[diesel_test_helper::test]
+    fn unknown_schema_is_reported_as_an_error() {
+        let conn = &mut connection();
+
+        assert!(conn.page_count(Some("nope")).is_err());
+        assert!(conn.freelist_count(Some("nope")).is_err());
     }
 }
