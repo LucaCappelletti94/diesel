@@ -3,6 +3,8 @@ mod raw;
 mod stmt;
 mod url;
 
+use core::num::NonZeroU64;
+
 use self::raw::RawConnection;
 use self::stmt::Statement;
 use self::stmt::iterator::StatementIterator;
@@ -210,6 +212,34 @@ impl Connection for MysqlConnection {
 
     fn set_prepared_statement_cache_size(&mut self, size: CacheSize) {
         self.statement_cache.set_cache_size(size);
+    }
+}
+
+impl MysqlConnection {
+    /// Executes `source` and returns its `mysql_stmt_insert_id`, zero mapped
+    /// to `None`. Public entry point: [`InsertStatement::execute_returning_id`].
+    pub(crate) fn execute_returning_id<T>(&mut self, source: &T) -> QueryResult<Option<NonZeroU64>>
+    where
+        T: QueryFragment<Mysql> + QueryId,
+    {
+        #[allow(unsafe_code)] // call to unsafe function
+        update_transaction_manager_status(
+            prepared_query(
+                &source,
+                &mut self.statement_cache,
+                &mut self.raw_connection,
+                &mut *self.instrumentation,
+            )
+            .and_then(|stmt| {
+                // SAFETY: `results` has not been called, so no result set is
+                // pending.
+                let stmt_use = unsafe { stmt.execute() }?;
+                Ok(NonZeroU64::new(stmt_use.insert_id()))
+            }),
+            &mut self.transaction_state,
+            &mut self.instrumentation,
+            &crate::debug_query(source),
+        )
     }
 }
 

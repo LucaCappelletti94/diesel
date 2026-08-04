@@ -1,5 +1,7 @@
 use super::schema::*;
 use diesel::*;
+#[cfg(feature = "mysql")]
+use std::num::NonZeroU64;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -1409,4 +1411,182 @@ fn returning_old_column_in_insert_on_conflict_do_update_via_selectable() {
         },
         row,
     );
+}
+
+#[cfg(feature = "mysql")]
+const GENERATED_KEY: &str = "users.id is AUTO_INCREMENT";
+
+#[cfg(feature = "mysql")]
+#[diesel_test_helper::test]
+fn execute_returning_id_returns_generated_key() {
+    use crate::schema::users::dsl::{id, name, users};
+
+    let connection = &mut connection();
+
+    let generated = insert_into(users)
+        .values(name.eq("Sean"))
+        .execute_returning_id(connection)
+        .unwrap()
+        .expect(GENERATED_KEY);
+
+    let inserted = users.select(id).load::<i32>(connection).unwrap();
+    assert_eq!(inserted.len(), 1);
+    assert_eq!(generated.get(), u64::try_from(inserted[0]).unwrap());
+}
+
+#[cfg(feature = "mysql")]
+#[diesel_test_helper::test]
+fn execute_returning_id_reports_each_statement_separately() {
+    use crate::schema::users::dsl::{id, name, users};
+
+    let connection = &mut connection();
+
+    let first = insert_into(users)
+        .values(name.eq("Sean"))
+        .execute_returning_id(connection)
+        .unwrap()
+        .expect(GENERATED_KEY);
+    let second = insert_into(users)
+        .values(name.eq("Tess"))
+        .execute_returning_id(connection)
+        .unwrap()
+        .expect(GENERATED_KEY);
+
+    assert!(second > first);
+    let inserted = users.select(id).order(id).load::<i32>(connection).unwrap();
+    assert_eq!(inserted.len(), 2);
+    let expected = vec![
+        u64::try_from(inserted[0]).unwrap(),
+        u64::try_from(inserted[1]).unwrap(),
+    ];
+    assert_eq!(vec![first.get(), second.get()], expected);
+}
+
+#[cfg(feature = "mysql")]
+#[diesel_test_helper::test]
+fn execute_returning_id_multi_row_returns_first_id() {
+    use crate::schema::users::dsl::{id, name, users};
+
+    let connection = &mut connection();
+
+    let generated = insert_into(users)
+        .values(vec![name.eq("Sean"), name.eq("Tess"), name.eq("Jim")])
+        .execute_returning_id(connection)
+        .unwrap()
+        .expect(GENERATED_KEY);
+
+    let inserted = users.select(id).order(id).load::<i32>(connection).unwrap();
+    assert_eq!(inserted.len(), 3);
+    assert_eq!(generated.get(), u64::try_from(inserted[0]).unwrap());
+}
+
+#[cfg(feature = "mysql")]
+#[diesel_test_helper::test]
+fn execute_returning_id_reports_an_explicit_key() {
+    use crate::schema::users::dsl::{id, name, users};
+
+    let connection = &mut connection();
+
+    // The SQL `LAST_INSERT_ID()` function would not report this one.
+    let generated = insert_into(users)
+        .values((id.eq(42), name.eq("Sean")))
+        .execute_returning_id(connection)
+        .unwrap();
+
+    assert_eq!(generated, NonZeroU64::new(42));
+}
+
+#[cfg(feature = "mysql")]
+#[diesel_test_helper::test]
+fn execute_returning_id_on_duplicate_key_update_reports_the_existing_row() {
+    use crate::schema::users::dsl::{id, name, users};
+
+    let connection = &mut connection();
+    insert_into(users)
+        .values((id.eq(42), name.eq("Sean")))
+        .execute(connection)
+        .unwrap();
+
+    let generated = insert_into(users)
+        .values((id.eq(42), name.eq("Sean")))
+        .on_conflict(diesel::dsl::DuplicatedKeys)
+        .do_update()
+        .set(name.eq("Renamed"))
+        .execute_returning_id(connection)
+        .unwrap();
+
+    assert_eq!(generated, NonZeroU64::new(42));
+    // Proves the update branch ran.
+    let stored = users.select(name).first::<String>(connection).unwrap();
+    assert_eq!(stored, "Renamed");
+}
+
+#[cfg(feature = "mysql")]
+#[diesel_test_helper::test]
+fn execute_returning_id_is_none_without_auto_increment() {
+    table! {
+        explicit_key_items (id) {
+            id -> Integer,
+            name -> Text,
+        }
+    }
+
+    let connection = &mut connection_without_transaction();
+    // Raw SQL because diesel has no DSL for DDL.
+    sql_query(
+        "CREATE TEMPORARY TABLE explicit_key_items (\
+             id INTEGER PRIMARY KEY,\
+             name TEXT NOT NULL\
+         )",
+    )
+    .execute(connection)
+    .unwrap();
+    connection.begin_test_transaction().unwrap();
+
+    let generated = insert_into(explicit_key_items::table)
+        .values((
+            explicit_key_items::id.eq(1),
+            explicit_key_items::name.eq("Sean"),
+        ))
+        .execute_returning_id(connection)
+        .unwrap();
+
+    assert_eq!(generated, None);
+    // `None` must not mean the insert was skipped.
+    let stored = explicit_key_items::table
+        .select(explicit_key_items::name)
+        .first::<String>(connection)
+        .unwrap();
+    assert_eq!(stored, "Sean");
+}
+
+#[cfg(feature = "mysql")]
+#[diesel_test_helper::test]
+fn execute_returning_id_is_none_when_nothing_is_inserted() {
+    use crate::schema::users::dsl::{id, name, users};
+
+    let connection = &mut connection();
+
+    // `users.id` is AUTO_INCREMENT, so `None` is about the empty insert.
+    let from_empty_select = users
+        .select(name)
+        .filter(name.eq("nobody"))
+        .insert_into(users)
+        .into_columns(name)
+        .execute_returning_id(connection)
+        .unwrap();
+    assert_eq!(from_empty_select, None);
+
+    insert_into(users)
+        .values((id.eq(7), name.eq("Sean")))
+        .execute(connection)
+        .unwrap();
+    let all_rows_skipped = diesel::insert_or_ignore_into(users)
+        .values((id.eq(7), name.eq("Tess")))
+        .execute_returning_id(connection)
+        .unwrap();
+    assert_eq!(all_rows_skipped, None);
+
+    let stored = users.select(name).first::<String>(connection).unwrap();
+    assert_eq!(stored, "Sean");
 }
