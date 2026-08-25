@@ -142,7 +142,8 @@ pub(crate) use self::select_statement::BoxedSelectStatement;
 #[doc(inline)]
 pub(crate) use self::select_statement::SelectStatement;
 
-pub(crate) use self::insert_statement::ColumnList;
+#[doc(inline)]
+pub use self::insert_statement::ColumnList;
 
 #[cfg(feature = "postgres_backend")]
 pub use crate::pg::query_builder::only::Only;

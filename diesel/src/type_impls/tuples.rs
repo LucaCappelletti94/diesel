@@ -132,16 +132,18 @@ macro_rules! tuple_impls {
             // as this makes the error message worse (not saying which column is problematic)
             impl<$($T,)+ Tab> ColumnList for ($($T,)+)
             where
-                $($T: ColumnList<Table = Tab>,)+
+                $($T: Column<Table = Tab>,)+
             {
                 type Table = Tab;
+
+                const NAMES: &'static [&'static str] = &[$(<$T as Column>::NAME,)+];
 
                 fn walk_ast<__DB: Backend>(&self, mut out: AstPass<'_, '_, __DB>) -> QueryResult<()> {
                     $(
                         if $idx != 0 {
                             out.push_sql(", ");
                         }
-                        self.$idx.walk_ast(out.reborrow())?;
+                        <$T as ColumnList>::walk_ast(&self.$idx, out.reborrow())?;
                     )+
                     Ok(())
                 }

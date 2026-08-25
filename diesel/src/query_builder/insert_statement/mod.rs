@@ -3,7 +3,7 @@ mod column_list;
 mod insert_from_select;
 
 pub(crate) use self::batch_insert::BatchInsert;
-pub(crate) use self::column_list::ColumnList;
+pub use self::column_list::ColumnList;
 pub(crate) use self::insert_from_select::InsertFromSelect;
 pub(crate) use self::private::Insert;
 #[diesel_derives::__diesel_public_if(

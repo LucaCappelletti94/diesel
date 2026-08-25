@@ -74,15 +74,15 @@ fn main() {
         .select((id, name))
         .insert_into(posts)
         .into_columns((comments::post_id, title));
-    //~^ ERROR: the trait bound `(post_id, title): ColumnList` is not satisfied
+    //~^ ERROR: the trait bound `(comments::columns::post_id, posts::columns::title): ColumnList` is not satisfied
 
     // Multiple columns, both from wrong table
     users
         .select((id, hair_color))
         .insert_into(posts)
         .into_columns((comments::post_id, comments::body));
-    //~^ ERROR: type mismatch resolving `<post_id as ColumnList>::Table == table`
-    //~| ERROR: type mismatch resolving `<body as ColumnList>::Table == table`
+    //~^ ERROR: type mismatch resolving `<post_id as Column>::Table == table`
+    //~| ERROR: type mismatch resolving `<body as Column>::Table == table`
 
     // Multiple columns, one wrong type
     users

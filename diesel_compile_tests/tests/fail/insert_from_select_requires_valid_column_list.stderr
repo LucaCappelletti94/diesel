@@ -65,16 +65,15 @@ note: expected this to be `diesel::sql_types::Integer`
 LL |         title -> Text,
    |                  ^^^^
 
-error[E0277]: the trait bound `(post_id, title): ColumnList` is not satisfied
+error[E0277]: the trait bound `(comments::columns::post_id, posts::columns::title): ColumnList` is not satisfied
    --> tests/fail/insert_from_select_requires_valid_column_list.rs:76:23
     |
  LL |         .into_columns((comments::post_id, title));
-    |          ------------ ^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |          ------------ ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ColumnList` is not implemented for `(comments::columns::post_id, posts::columns::title)`
     |          |
     |          required by a bound introduced by this call
     |
-    = help: the trait `diesel::query_builder::insert_statement::column_list::ColumnList` is not implemented for `(comments::columns::post_id, posts::columns::title)`
-    = help: the following other types implement trait `diesel::query_builder::insert_statement::column_list::ColumnList`:
+    = help: the following other types implement trait `ColumnList`:
               (T, T1)
               (T, T1, T2)
               (T, T1, T2, T3)
@@ -94,14 +93,24 @@ LL |         C2: ColumnList<Table = T> + Expression,
     |             ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `InsertStatement::<T, InsertFromSelect<U, C>, Op, Ret>::into_columns`
  
     
-error[E0271]: type mismatch resolving `<post_id as ColumnList>::Table == table`
+error[E0271]: type mismatch resolving `<post_id as Column>::Table == table`
    --> tests/fail/insert_from_select_requires_valid_column_list.rs:83:23
     |
  LL |         .into_columns((comments::post_id, comments::body));
-    |          ------------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `posts::table`, found `comments::table`
+    |          ------------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<post_id as Column>::Table == table`
     |          |
     |          required by a bound introduced by this call
     |
+note: expected this to be `posts::table`
+   --> tests/fail/insert_from_select_requires_valid_column_list.rs:22:1
+    |
+ LL | / table! {
+ LL | |     comments (post_id) {
+ LL | |         post_id -> Integer,
+ LL | |         body -> Nullable<Text>,
+ LL | |     }
+ LL | | }
+    | |_^
     = note: `comments::table` and `posts::table` have similar names, but are actually distinct types
 note: `comments::table` is defined in module `crate::comments` of the current crate
    --> tests/fail/insert_from_select_requires_valid_column_list.rs:22:1
@@ -115,7 +124,7 @@ note: `posts::table` is defined in module `crate::posts` of the current crate
  LL | / table! {
  LL | |     posts (user_id) {
     | |_________^
-    = note: required for `(comments::columns::post_id, comments::columns::body)` to implement `diesel::query_builder::insert_statement::column_list::ColumnList`
+    = note: required for `(comments::columns::post_id, comments::columns::body)` to implement `ColumnList`
 note: required by a bound in `InsertStatement::<T, diesel::query_builder::insert_statement::insert_from_select::InsertFromSelect<U, C>, Op, Ret>::into_columns`
    --> DIESEL/diesel/diesel/src/query_builder/insert_statement/mod.rs
     |
@@ -126,14 +135,24 @@ LL |         C2: ColumnList<Table = T> + Expression,
     |                        ^^^^^^^^^ required by this bound in `InsertStatement::<T, InsertFromSelect<U, C>, Op, Ret>::into_columns`
     = note: this error originates in the macro `table` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0271]: type mismatch resolving `<body as ColumnList>::Table == table`
+error[E0271]: type mismatch resolving `<body as Column>::Table == table`
    --> tests/fail/insert_from_select_requires_valid_column_list.rs:83:23
     |
  LL |         .into_columns((comments::post_id, comments::body));
-    |          ------------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `posts::table`, found `comments::table`
+    |          ------------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<body as Column>::Table == table`
     |          |
     |          required by a bound introduced by this call
     |
+note: expected this to be `posts::table`
+   --> tests/fail/insert_from_select_requires_valid_column_list.rs:22:1
+    |
+ LL | / table! {
+ LL | |     comments (post_id) {
+ LL | |         post_id -> Integer,
+ LL | |         body -> Nullable<Text>,
+ LL | |     }
+ LL | | }
+    | |_^
     = note: `comments::table` and `posts::table` have similar names, but are actually distinct types
 note: `comments::table` is defined in module `crate::comments` of the current crate
    --> tests/fail/insert_from_select_requires_valid_column_list.rs:22:1
@@ -147,7 +166,7 @@ note: `posts::table` is defined in module `crate::posts` of the current crate
  LL | / table! {
  LL | |     posts (user_id) {
     | |_________^
-    = note: required for `(comments::columns::post_id, comments::columns::body)` to implement `diesel::query_builder::insert_statement::column_list::ColumnList`
+    = note: required for `(comments::columns::post_id, comments::columns::body)` to implement `ColumnList`
 note: required by a bound in `InsertStatement::<T, diesel::query_builder::insert_statement::insert_from_select::InsertFromSelect<U, C>, Op, Ret>::into_columns`
    --> DIESEL/diesel/diesel/src/query_builder/insert_statement/mod.rs
     |

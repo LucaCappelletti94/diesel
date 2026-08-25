@@ -14,6 +14,7 @@ Increasing the minimal supported Rust version will always be coupled at least wi
 
 ### Added
 
+* Exposed `ColumnList` with a `NAMES` constant for retrieving names from a column or flat column tuple
 * Add support for Batch-Update for PostgreSQL, MySQL and SQLite
 * Diesel-Migrations now contains a migration source that easily allows you to register Rust based migrations
 * Diesel-Migrations now contains a migration source that allows you to combine migrations from several different sources
