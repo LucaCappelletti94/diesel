@@ -1,0 +1,13 @@
+# The targets CI runs, read by the fuzz workflow and by the ClusterFuzzLite
+# build. Every target is enabled: a known defect is skipped by the narrow guard
+# that names it, never by dropping its target.
+jsonb_decode
+jsonb_decode_oracle
+jsonb_strictness
+jsonb_encode_roundtrip
+jsonb_structured
+pg_from_sql
+pg_differential
+mysql_from_sql
+mysql_differential
+sqlite_text_datetime

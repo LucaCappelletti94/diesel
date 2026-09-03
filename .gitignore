@@ -1,6 +1,7 @@
 target
 Cargo.lock
 !diesel_cli/Cargo.lock
+!fuzz/Cargo.lock
 .env
 *.snap.new
 .DS_Store

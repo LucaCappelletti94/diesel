@@ -1,0 +1,118 @@
+[package]
+name = "diesel-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4.20", default-features = false, features = ["clock", "std"] }
+time = { version = "0.3.9", features = ["macros"] }
+bigdecimal = "0.4"
+ipnet = "2.5.0"
+ipnetwork = "0.21"
+uuid = "1"
+thiserror = "2"
+# the oracle must be the very library diesel links, so pin a bundled sqlite
+libsqlite3-sys = { version = "0.38", features = ["bundled"] }
+
+[dependencies.diesel]
+path = "../diesel"
+default-features = false
+features = [
+    "32-column-tables",
+    "chrono",
+    "i-implement-a-third-party-backend-and-opt-into-breaking-changes",
+    "ipnet-address",
+    "mysql_backend",
+    "network-address",
+    "numeric",
+    "postgres_backend",
+    "serde_json",
+    "sqlite",
+    "time",
+    "uuid",
+    "with-deprecated",
+]
+
+[profile.release]
+debug = 1
+
+# keep the fuzz crate out of the root workspace
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "jsonb_decode"
+path = "fuzz_targets/jsonb_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jsonb_decode_oracle"
+path = "fuzz_targets/jsonb_decode_oracle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jsonb_strictness"
+path = "fuzz_targets/jsonb_strictness.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jsonb_encode_roundtrip"
+path = "fuzz_targets/jsonb_encode_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jsonb_structured"
+path = "fuzz_targets/jsonb_structured.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pg_from_sql"
+path = "fuzz_targets/pg_from_sql.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pg_differential"
+path = "fuzz_targets/pg_differential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mysql_from_sql"
+path = "fuzz_targets/mysql_from_sql.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mysql_differential"
+path = "fuzz_targets/mysql_differential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sqlite_text_datetime"
+path = "fuzz_targets/sqlite_text_datetime.rs"
+test = false
+doc = false
+bench = false

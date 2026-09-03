@@ -24,3 +24,18 @@ jobs:
           tool: cargo-deny
       - run: |
           cargo deny check
+
+  # its own job: a root failure must not hide the fuzz workspace's advisories
+  fuzz_audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@60581cd7025e0e855cebd745379013e286d9c787 # v2.64.2
+        with:
+          tool: cargo-deny
+      # the crate is never published, so licenses and duplicate versions stay
+      # the root workspace's policy
+      - run: |
+          cargo deny --manifest-path fuzz/Cargo.toml check advisories sources
