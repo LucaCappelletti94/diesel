@@ -588,8 +588,9 @@ mod jsonb {
     }
 
     pub(super) fn write_jsonb_string(s: &str, buffer: &mut Vec<u8>) -> serialize::Result {
-        if s.chars().any(|c| c.is_control()) {
-            // If the string contains control characters, treat it as TEXTJ (escaped JSON)
+        // A TEXT payload must carry no escape, and JSON escapes exactly `"`, `\` and
+        // the C0 controls. `is_control` would also catch DEL, which needs no escape.
+        if s.chars().any(|c| c == '"' || c == '\\' || c < '\u{20}') {
             write_jsonb_textj(s, buffer)
         } else {
             write_jsonb_header(buffer, JSONB_TEXT, s.len())?;
@@ -1012,6 +1013,81 @@ mod tests {
         .unwrap();
 
         assert!(res);
+    }
+
+    #[diesel_test_helper::test]
+    #[cfg(not(miri))] // ffi call
+    fn every_jsonb_string_is_written_valid_and_round_trips() {
+        let conn = &mut connection();
+
+        // A string needs no escaping only when it carries no `"`, no `\` and no
+        // control character, so an accented letter and DEL stay TEXT while `a"b`
+        // has to become TEXTJ.
+        let strings = [
+            ("hello", JSONB_TEXT),
+            ("", JSONB_TEXT),
+            ("\u{e9}", JSONB_TEXT),
+            ("\u{1f600}", JSONB_TEXT),
+            ("a/b", JSONB_TEXT),
+            ("\u{7f}", JSONB_TEXT),
+            ("a\"b", JSONB_TEXTJ),
+            ("a\\b", JSONB_TEXTJ),
+            ("a\nb", JSONB_TEXTJ),
+            ("\u{1f}", JSONB_TEXTJ),
+        ];
+
+        for (string, element_type) in strings {
+            let value = json!(string);
+            let blob = diesel::select(sql::<sql_types::Binary>("").bind::<Jsonb, _>(value.clone()))
+                .get_result::<Vec<u8>>(conn)
+                .unwrap();
+            assert_eq!(
+                blob[0] & 0x0F,
+                element_type,
+                "{value} was written with the wrong element type: {blob:02X?}"
+            );
+
+            let valid = diesel::select(
+                sql::<sql_types::Integer>("json_valid(")
+                    .bind::<sql_types::Binary, _>(blob.clone())
+                    .sql(", 8)"),
+            )
+            .get_result::<i32>(conn)
+            .unwrap();
+            assert_eq!(
+                valid, 1,
+                "sqlite rejects the blob written for {value}: {blob:02X?}"
+            );
+
+            let back = diesel::select(sql::<Jsonb>("").bind::<sql_types::Binary, _>(blob.clone()))
+                .get_result::<Value>(conn)
+                .unwrap_or_else(|error| panic!("{value} does not read back: {error}"));
+            assert_eq!(back, value, "{blob:02X?}");
+        }
+    }
+
+    #[diesel_test_helper::test]
+    #[cfg(not(miri))] // ffi call
+    fn strings_needing_escapes_are_valid_inside_containers() {
+        let conn = &mut connection();
+        let value = json!({"a\"b": ["c\\d", "e\nf"], "plain": "x"});
+
+        let blob = diesel::select(sql::<sql_types::Binary>("").bind::<Jsonb, _>(value.clone()))
+            .get_result::<Vec<u8>>(conn)
+            .unwrap();
+        let valid = diesel::select(
+            sql::<sql_types::Integer>("json_valid(")
+                .bind::<sql_types::Binary, _>(blob.clone())
+                .sql(", 8)"),
+        )
+        .get_result::<i32>(conn)
+        .unwrap();
+        assert_eq!(valid, 1, "sqlite rejects {blob:02X?}");
+
+        let back = diesel::select(sql::<Jsonb>("").bind::<sql_types::Binary, _>(blob))
+            .get_result::<Value>(conn)
+            .unwrap();
+        assert_eq!(back, value);
     }
 
     #[diesel_test_helper::test]
