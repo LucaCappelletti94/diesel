@@ -309,15 +309,18 @@ mod jsonb {
 
         // Read only the number of bytes specified by the payload size
         let int_str = core::str::from_utf8(bytes).map_err(|_| "Invalid ASCII in JSONB integer")?;
-        let int_value = serde_json::from_str(int_str)
-            .map_err(|_| "Failed to parse JSONB")
-            .and_then(|v: serde_json::Value| {
-                v.is_i64()
-                    .then_some(v)
-                    .ok_or("Failed to parse JSONB integer")
-            })?;
+        // sqlite refuses a leading plus, which `i64` parsing would accept
+        if int_str.starts_with('+') {
+            return Err("Failed to parse JSONB".into());
+        }
+        let int_value = int_str.parse::<i64>().map_err(|e| match e.kind() {
+            core::num::IntErrorKind::PosOverflow | core::num::IntErrorKind::NegOverflow => {
+                "Failed to parse JSONB integer"
+            }
+            _ => "Failed to parse JSONB",
+        })?;
 
-        Ok(int_value)
+        Ok(serde_json::Value::from(int_value))
     }
 
     // Read a JSON float in canonical format (FLOAT)
@@ -675,6 +678,140 @@ mod tests {
             assert_eq!(back, value, "{blob:02X?}");
         }
     }
+    fn jsonb_element(tag: u8, payload: &[u8]) -> Vec<u8> {
+        let mut blob = Vec::new();
+        match u8::try_from(payload.len()) {
+            Ok(size) if size < 12 => blob.push((size << 4) | tag),
+            Ok(size) => {
+                blob.push(0xC0 | tag);
+                blob.push(size);
+            }
+            Err(_) => unreachable!("test payloads stay under 256 bytes"),
+        }
+        blob.extend_from_slice(payload);
+        blob
+    }
+
+    #[diesel_test_helper::test]
+    #[cfg(not(miri))] // ffi call
+    fn regression_jsonb_integer_with_a_leading_zero_is_read() {
+        let conn = &mut connection();
+        let mut offenders = Vec::new();
+        let mut payloads = alloc::vec![
+            "01".to_string(),
+            "007".into(),
+            "-01".into(),
+            "00".into(),
+            "-00".into(),
+            "0001".into(),
+            "00000000001".into(),
+            "0000000000001".into(),
+            "0009223372036854775807".into(),
+            "-0009223372036854775808".into(),
+            "000000000000000000000000000000042".into(),
+            "0".into(),
+            "1".into(),
+            "-1".into(),
+            "9223372036854775807".into(),
+            "-9223372036854775808".into(),
+        ];
+        let mut state: u64 = 0x2545F4914F6CDD1D;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..256 {
+            let value = next();
+            let zeros = "0".repeat(usize::try_from(value % 14).unwrap_or(0));
+            let sign = if value % 3 == 0 { "-" } else { "" };
+            payloads.push(alloc::format!("{sign}{zeros}{}", value % 1_000_000_000));
+        }
+
+        for payload in payloads {
+            let blob = jsonb_element(JSONB_INT, payload.as_bytes());
+            let valid = diesel::select(
+                sql::<sql_types::Integer>("json_valid(")
+                    .bind::<sql_types::Binary, _>(blob.clone())
+                    .sql(", 8)"),
+            )
+            .get_result::<i32>(conn)
+            .unwrap();
+            if valid != 1 {
+                continue; // sqlite calls the blob malformed, so it sets no expectation
+            }
+            let expected = diesel::select(
+                sql::<sql_types::BigInt>("json_extract(")
+                    .bind::<sql_types::Binary, _>(blob.clone())
+                    .sql(", '$')"),
+            )
+            .get_result::<i64>(conn)
+            .unwrap();
+            let end_to_end = diesel::select(sql::<Jsonb>("").bind::<sql_types::Binary, _>(blob))
+                .get_result::<Value>(conn);
+            match end_to_end {
+                Ok(Value::Number(ref number)) if number.as_i64() == Some(expected) => {}
+                Ok(value) => offenders.push(alloc::format!(
+                    "{payload} read as {value}, sqlite says {expected}"
+                )),
+                Err(e) => offenders.push(alloc::format!(
+                    "{payload} read as {e}, sqlite says {expected}"
+                )),
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "{} integers were misread, first {:?}",
+            offenders.len(),
+            &offenders[..offenders.len().min(4)]
+        );
+    }
+
+    #[diesel_test_helper::test]
+    #[cfg(not(miri))] // ffi call
+    fn regression_jsonb_leading_zero_stays_confined() {
+        let conn = &mut connection();
+
+        // a refused element used to take its container with it
+        let mut array = alloc::vec![(3 << 4) | JSONB_ARRAY];
+        array.extend_from_slice(&jsonb_element(JSONB_INT, b"01"));
+        assert_eq!(read_jsonb_value(&array).unwrap().0, json!([1]));
+
+        let key = jsonb_element(JSONB_TEXT, b"a");
+        let value = jsonb_element(JSONB_INT, b"01");
+        let mut object =
+            alloc::vec![u8::try_from(key.len() + value.len()).unwrap() << 4 | JSONB_OBJECT];
+        object.extend_from_slice(&key);
+        object.extend_from_slice(&value);
+        let valid = diesel::select(
+            sql::<sql_types::Integer>("json_valid(")
+                .bind::<sql_types::Binary, _>(object.clone())
+                .sql(", 8)"),
+        )
+        .get_result::<i32>(conn)
+        .unwrap();
+        assert_eq!(
+            valid, 1,
+            "the object blob itself is malformed: {object:02X?}"
+        );
+        assert_eq!(read_jsonb_value(&object).unwrap().0, json!({ "a": 1 }));
+
+        let beyond = jsonb_element(JSONB_INT, b"00018446744073709551615");
+        assert!(read_jsonb_value(&beyond).is_err());
+
+        // sqlite calls a float with a leading zero malformed
+        for payload in [&b"01.5"[..], b"00.5", b"0001e2"] {
+            let blob = jsonb_element(JSONB_FLOAT, payload);
+            assert!(
+                read_jsonb_value(&blob).is_err(),
+                "{:?} decoded to {:?}",
+                core::str::from_utf8(payload),
+                read_jsonb_value(&blob).map(|value| value.0)
+            );
+        }
+    }
+
     #[diesel_test_helper::test]
     #[cfg(not(miri))] // ffi call
     fn json_to_sql() {
