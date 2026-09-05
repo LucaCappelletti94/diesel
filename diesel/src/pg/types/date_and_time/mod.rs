@@ -181,14 +181,26 @@ impl FromSql<sql_types::Interval, Pg> for PgInterval {
     }
 }
 
+/// # Panics
+///
+/// Panics when a field of the sum leaves its type.
 impl Add<PgInterval> for PgInterval {
     type Output = PgInterval;
 
     fn add(self, other: PgInterval) -> Self::Output {
         PgInterval {
-            microseconds: self.microseconds + other.microseconds,
-            days: self.days + other.days,
-            months: self.months + other.months,
+            microseconds: self
+                .microseconds
+                .checked_add(other.microseconds)
+                .expect("Maximal supported interval size is 64 bit microseconds"),
+            days: self
+                .days
+                .checked_add(other.days)
+                .expect("Maximal supported day interval size is 32 bit"),
+            months: self
+                .months
+                .checked_add(other.months)
+                .expect("Maximal supported month interval size is 32 bit"),
         }
     }
 }

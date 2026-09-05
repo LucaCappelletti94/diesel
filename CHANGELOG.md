@@ -66,6 +66,7 @@ Increasing the minimal supported Rust version will always be coupled at least wi
 * Tighten requirements for `SqliteConnection::deserialize_readonly_database` to closely match the upstream requirements
 * `diesel print-schema` now generates `joinable!` and `allow_tables_to_appear_in_same_query!` for PostgreSQL foreign keys across multiple configured schemas
 * Fixed several Tests using schema modifications for `mysql` and `mariadb`
+* Fixed the PostgreSQL interval builders such as `IntervalDsl::years` and `Add for PgInterval` wrapping silently in a release build, and rejected the non finite and out of range floats they used to turn into a saturated or zero interval
 
 ### Changed
 
