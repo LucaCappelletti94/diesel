@@ -211,9 +211,9 @@ mod jsonb {
             JSONB_TRUE => Ok(serde_json::Value::Bool(true)),
             JSONB_FALSE => Ok(serde_json::Value::Bool(false)),
             JSONB_INT => read_jsonb_int(payload_bytes, header.payload_size),
-            JSONB_INT5 => Err("INT5 is not supported".into()),
+            JSONB_INT5 => read_jsonb_int5(payload_bytes, header.payload_size),
             JSONB_FLOAT => read_jsonb_float(payload_bytes, header.payload_size),
-            JSONB_FLOAT5 => Err("FLOAT5 is not supported".into()),
+            JSONB_FLOAT5 => read_jsonb_float5(payload_bytes, header.payload_size),
             JSONB_TEXT => read_jsonb_text(payload_bytes, header.payload_size),
             JSONB_TEXTJ => read_jsonb_textj(payload_bytes, header.payload_size),
             JSONB_TEXTRAW => read_jsonb_text(payload_bytes, header.payload_size),
@@ -318,6 +318,100 @@ mod jsonb {
             })?;
 
         Ok(int_value)
+    }
+
+    // Read a JSON5 integer (INT5), which sqlite writes for a hexadecimal
+    // literal such as `0x1f`, optionally signed
+    pub(super) fn read_jsonb_int5(
+        bytes: &[u8],
+        payload_size: usize,
+    ) -> deserialize::Result<serde_json::Value> {
+        if bytes.len() < payload_size {
+            return Err(alloc::format!(
+                "Expected payload of size {}, but got {}",
+                payload_size,
+                bytes.len()
+            )
+            .into());
+        }
+
+        let text = core::str::from_utf8(bytes).map_err(|_| "Invalid ASCII in JSONB integer")?;
+        let (negative, digits) = match text.as_bytes().first() {
+            Some(b'-') => (true, &text[1..]),
+            Some(b'+') => (false, &text[1..]),
+            _ => (false, text),
+        };
+        let digits = digits
+            .strip_prefix("0x")
+            .or_else(|| digits.strip_prefix("0X"))
+            .ok_or("Failed to parse JSONB integer")?;
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("Failed to parse JSONB integer".into());
+        }
+        let magnitude =
+            u64::from_str_radix(digits, 16).map_err(|_| "Failed to parse JSONB integer")?;
+
+        if !negative {
+            return Ok(serde_json::Value::from(magnitude));
+        }
+        if magnitude == 0 {
+            // sqlite reads `-0x0` as a negative zero, which json spells as a float
+            let zero = serde_json::Number::from_f64(-0.0).ok_or("Failed to parse JSONB integer")?;
+            return Ok(serde_json::Value::Number(zero));
+        }
+        let value = i64::try_from(magnitude).map(|value| -value).or_else(|_| {
+            (magnitude == 1 << 63)
+                .then_some(i64::MIN)
+                .ok_or("Failed to parse JSONB integer")
+        })?;
+        Ok(serde_json::Value::from(value))
+    }
+
+    // Read a JSON5 float (FLOAT5), which sqlite writes for a literal whose
+    // fraction has no digit on one side, such as `.5` or `1.`
+    pub(super) fn read_jsonb_float5(
+        bytes: &[u8],
+        payload_size: usize,
+    ) -> deserialize::Result<serde_json::Value> {
+        if bytes.len() < payload_size {
+            return Err(alloc::format!(
+                "Expected payload of size {}, but got {}",
+                payload_size,
+                bytes.len()
+            )
+            .into());
+        }
+
+        let text = core::str::from_utf8(bytes).map_err(|_| "Invalid ASCII in JSONB float")?;
+        let digits = text.strip_prefix(['-', '+']).unwrap_or(text);
+        let (mantissa, exponent) = match digits.split_once(['e', 'E']) {
+            Some((mantissa, exponent)) => (mantissa, Some(exponent)),
+            None => (digits, None),
+        };
+        let (whole, fraction) = mantissa
+            .split_once('.')
+            .ok_or("Failed to parse JSONB number")?;
+        let exponent_digits = exponent
+            .map(|exponent| exponent.strip_prefix(['-', '+']).unwrap_or(exponent))
+            .unwrap_or("1");
+        let decimal = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
+        // json5 allows a missing digit on one side of the point, never on both
+        if whole.is_empty() && fraction.is_empty()
+            || !decimal(whole)
+            || !decimal(fraction)
+            || exponent_digits.is_empty()
+            || !decimal(exponent_digits)
+        {
+            return Err("Failed to parse JSONB number".into());
+        }
+
+        let value = text
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .and_then(serde_json::Number::from_f64)
+            .ok_or("Failed to parse JSONB number")?;
+        Ok(serde_json::Value::Number(value))
     }
 
     // Read a JSON float in canonical format (FLOAT)
@@ -675,6 +769,98 @@ mod tests {
             assert_eq!(back, value, "{blob:02X?}");
         }
     }
+    #[diesel_test_helper::test]
+    #[cfg(not(miri))] // ffi call
+    fn regression_json5_numbers_are_read() {
+        let conn = &mut connection();
+        let mut offenders = Vec::new();
+        let mut literals = alloc::vec![
+            "0x1f".to_string(),
+            "0X1F".into(),
+            "-0x10".into(),
+            "+0x10".into(),
+            "0x0".into(),
+            "-0x0".into(),
+            "0xabcdef".into(),
+            "0x7fffffffffffffff".into(),
+            "-0x8000000000000000".into(),
+            "0xffffffffffffffff".into(),
+            ".5".into(),
+            "-.5".into(),
+            "+.5".into(),
+            "1.".into(),
+            "-1.".into(),
+            ".5e3".into(),
+            "5.e3".into(),
+            ".0".into(),
+            "0.".into(),
+            "[0x1f, .5, 1.]".into(),
+            "{a: 0x1f, b: .5}".into(),
+            // canonical forms that already worked
+            "1".into(),
+            "-1".into(),
+            "1.5".into(),
+            "1e2".into(),
+        ];
+        // deterministic hex and fraction shapes, since a handpicked list is
+        // only as good as the shapes one thinks of
+        let mut state: u64 = 0x2545F4914F6CDD1D;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..128 {
+            let value = next();
+            let width = usize::try_from(value % 16 + 1).unwrap_or(1);
+            let hex: alloc::string::String = alloc::format!("{value:016x}")[..width].into();
+            let sign = if value % 3 == 0 { "-" } else { "" };
+            literals.push(alloc::format!("{sign}0x{hex}"));
+            literals.push(alloc::format!("{sign}.{}", value % 100_000));
+            literals.push(alloc::format!("{}.", value % 100_000));
+            literals.push(alloc::format!("{sign}.{}e{}", value % 1000, value % 7));
+        }
+
+        for literal in literals {
+            let Ok(blob) = diesel::select(
+                sql::<sql_types::Binary>("jsonb(")
+                    .bind::<sql_types::Text, _>(literal.clone())
+                    .sql(")"),
+            )
+            .get_result::<Vec<u8>>(conn) else {
+                continue; // sqlite rejects it, so there is nothing to read
+            };
+            // sqlite's own rendering of the blob is the reference
+            let rendered = diesel::select(
+                sql::<sql_types::Text>("json(")
+                    .bind::<sql_types::Binary, _>(blob.clone())
+                    .sql(")"),
+            )
+            .get_result::<String>(conn)
+            .unwrap();
+            let Ok(expected) = serde_json::from_str::<Value>(&rendered) else {
+                continue; // sqlite renders an infinity, which json cannot hold
+            };
+            if matches!(blob[0] & 0x0F, JSONB_INT | JSONB_INT5) && expected.is_f64() {
+                continue; // an integer beyond `i64` and `u64`, refused like a canonical `INT`
+            }
+            match read_jsonb_value(&blob).map(|value| value.0) {
+                Ok(ref value) if value == &expected => {}
+                Ok(value) => offenders.push(alloc::format!(
+                    "{literal} read as {value}, sqlite says {expected}"
+                )),
+                Err(e) => offenders.push(alloc::format!("{literal} read as {e}")),
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "{} json5 numbers were misread, first {:?}",
+            offenders.len(),
+            &offenders[..offenders.len().min(4)]
+        );
+    }
+
     #[diesel_test_helper::test]
     #[cfg(not(miri))] // ffi call
     fn json_to_sql() {
