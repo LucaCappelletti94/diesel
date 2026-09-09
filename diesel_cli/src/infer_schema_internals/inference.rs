@@ -283,6 +283,7 @@ fn load_column_structure_data(
     config: &PrintSchema,
     primary_key: Option<&[String]>,
     kind: SupportedQueryRelationStructures,
+    all_foreign_keys: &[ForeignKeyConstraint],
 ) -> Result<(Option<String>, Vec<ColumnDefinition>), crate::errors::Error> {
     // No point in loading table comments if they are not going to be displayed
     let table_comment = match config.with_docs {
@@ -293,15 +294,11 @@ fn load_column_structure_data(
         }
     };
 
-    let foreign_keys = load_foreign_key_constraints(connection, name.schema.as_deref())?
-        .into_iter()
-        .filter_map(|c| {
-            if c.child_table == *name && c.foreign_key_columns.len() == 1 {
-                Some((c.foreign_key_columns_rust[0].clone(), c))
-            } else {
-                None
-            }
-        })
+    // Filter the pre-loaded schema-wide FK list to constraints for this table only.
+    let foreign_keys: HashMap<String, ForeignKeyConstraint> = all_foreign_keys
+        .iter()
+        .filter(|c| c.child_table == *name && c.foreign_key_columns.len() == 1)
+        .map(|c| (c.foreign_key_columns_rust[0].clone(), c.clone()))
         .collect();
 
     let pg_domains_as_custom_types = config
@@ -347,13 +344,20 @@ pub fn load_table_data(
     name: TableName,
     config: &PrintSchema,
     tpe: SupportedQueryRelationStructures,
+    foreign_keys: &[ForeignKeyConstraint],
 ) -> Result<TableData, crate::errors::Error> {
     let primary_key = match tpe {
         SupportedQueryRelationStructures::Table => get_primary_keys(connection, &name)?,
         SupportedQueryRelationStructures::View => Vec::new(),
     };
-    let (table_comment, column_data) =
-        load_column_structure_data(connection, &name, config, Some(&primary_key), tpe)?;
+    let (table_comment, column_data) = load_column_structure_data(
+        connection,
+        &name,
+        config,
+        Some(&primary_key),
+        tpe,
+        foreign_keys,
+    )?;
     let primary_key = primary_key
         .iter()
         .map(|k| rust_name_for_sql_name(k, Some(&name)))
@@ -377,6 +381,7 @@ pub fn load_view_data(
         resolver.config,
         None,
         SupportedQueryRelationStructures::View,
+        &resolver.fk_constraints,
     )?;
     let sql_definition = load_view_sql_definition(resolver.connection, &name)?;
     if resolver.config.experimental_infer_nullable_for_views {

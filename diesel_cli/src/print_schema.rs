@@ -599,6 +599,10 @@ pub(crate) fn load_custom_types(
                         //   - the raw SQL type name (`ty.sql_name`),
                         //   - and the schema-qualified SQL name (`schema.sql_name`), if present.
                         .filter(|ty| {
+                            // Fast path when no exclusions are configured (the default).
+                            if config.except_custom_type_definitions.is_empty() {
+                                return true;
+                            }
                             let schema_qualified =
                                 ty.schema.as_deref().map(|s| format!("{s}.{}", ty.sql_name));
                             !config.except_custom_type_definitions.iter().any(|rx| {
@@ -742,7 +746,7 @@ pub(crate) fn multi_schema_table_prefixes(
             continue;
         };
         for table in safe_tables_for_config(connection, config)? {
-            prefixes.entry(table).or_insert(prefix.clone());
+            prefixes.entry(table).or_insert_with(|| prefix.clone());
         }
     }
     Ok(prefixes)
@@ -808,7 +812,13 @@ pub fn output_schema(
     let local_safe_tables: BTreeSet<TableName> =
         current_schema_safe_tables.iter().cloned().collect();
 
-    let resolver = SchemaResolverImpl::new(connection, table_names, config, unfiltered_table_names);
+    let resolver = SchemaResolverImpl::new(
+        connection,
+        table_names,
+        config,
+        unfiltered_table_names,
+        foreign_keys,
+    );
     let data = resolver.resolve_query_relations()?;
 
     let columns_custom_types = if config.generate_missing_sql_type_definitions() {
@@ -1424,14 +1434,24 @@ fn foreign_key_table_groups<'a>(
     tables: Vec<&'a TableData>,
     fk_constraints: &'a [ForeignKeyConstraint],
 ) -> Vec<Vec<&'a TableName>> {
+    // Precompute undirected adjacency so the DFS is O(V + E) instead of O(V * E).
+    let mut adjacency: HashMap<&TableName, Vec<&TableName>> = HashMap::new();
+    for fk in fk_constraints {
+        adjacency
+            .entry(&fk.parent_table)
+            .or_default()
+            .push(&fk.child_table);
+        adjacency
+            .entry(&fk.child_table)
+            .or_default()
+            .push(&fk.parent_table);
+    }
+
     let mut visited = BTreeSet::new();
     let mut components = vec![];
 
     // Find connected components in table graph. For the intended purpose of this function, we treat
     // the foreign key relation as being symmetrical, i.e. we are operating on the undirected graph.
-    //
-    // The algorithm is not optimized and suffers from repeated lookups in the foreign key list, but
-    // it should be sufficient for typical table counts from a few dozen up to a few hundred tables.
     for table in tables {
         let name = &table.name;
         if visited.contains(name) {
@@ -1444,24 +1464,16 @@ fn foreign_key_table_groups<'a>(
         let mut pending = vec![name];
 
         // Start a depth-first search with the current table name, walking the foreign key relations
-        // in both directions.
+        // in both directions via the precomputed adjacency map.
         while let Some(name) = pending.pop() {
             component.push(name);
 
-            let mut visit = |related_name: &'a TableName| {
-                if visited.insert(related_name) {
-                    pending.push(related_name);
+            if let Some(neighbors) = adjacency.get(name) {
+                for &related_name in neighbors {
+                    if visited.insert(related_name) {
+                        pending.push(related_name);
+                    }
                 }
-            };
-
-            // Visit all remaining child tables that have this table as parent.
-            for foreign_key in fk_constraints.iter().filter(|fk| fk.parent_table == *name) {
-                visit(&foreign_key.child_table);
-            }
-
-            // Visit all remaining parent tables that have this table as child.
-            for foreign_key in fk_constraints.iter().filter(|fk| fk.child_table == *name) {
-                visit(&foreign_key.parent_table);
             }
         }
 

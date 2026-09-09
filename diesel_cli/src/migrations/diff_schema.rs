@@ -77,17 +77,17 @@ pub fn generate_sql_based_on_diff_schema(
     rust_side_schema.visit_file(&syn_file);
     let mut conn = InferConnection::from_maybe_url(database_url)?;
 
-    let foreign_keys =
+    let all_foreign_keys =
         crate::infer_schema_internals::load_foreign_key_constraints(&mut conn, None)?;
-    let foreign_key_map =
-        foreign_keys
-            .into_iter()
-            .fold(HashMap::<_, Vec<_>>::new(), |mut acc, t| {
-                acc.entry(t.child_table.rust_name.clone())
-                    .or_default()
-                    .push(t);
-                acc
-            });
+    let foreign_key_map = {
+        let mut map: HashMap<&str, Vec<&ForeignKeyConstraint>> = HashMap::new();
+        for fk in &all_foreign_keys {
+            map.entry(fk.child_table.rust_name.as_str())
+                .or_default()
+                .push(fk);
+        }
+        map
+    };
 
     let mut expected_fk_map =
         rust_side_schema
@@ -147,8 +147,8 @@ pub fn generate_sql_based_on_diff_schema(
                     table.clone(),
                     &config,
                     structure,
+                    &all_foreign_keys,
                 )?;
-                table_data.push(QueryRelationData::Table(columns.clone()));
                 if let Some(TableDecl { primary_keys, view }) =
                     expected_schema_map.remove(&table.sql_name.to_lowercase())
                 {
@@ -170,18 +170,21 @@ pub fn generate_sql_based_on_diff_schema(
                             "Cannot change primary keys with --diff-schema yet".into(),
                         ));
                     }
+                    // Clone only column_data; move the rest of TableData into table_data.
+                    let column_data = columns.column_data.clone();
+                    table_data.push(QueryRelationData::Table(columns));
                     schema_diff.push(update_columns(
                         view,
-                        columns.column_data,
+                        column_data,
                         &rust_side_schema.enum_sql_types,
                     )?);
                 } else {
                     tracing::info!("Table does not exist yet");
-                    let foreign_keys = foreign_key_map
-                        .get(&table.rust_name)
-                        .cloned()
+                    let drop_fks = foreign_key_map
+                        .get(table.rust_name.as_str())
+                        .map(|refs| refs.iter().map(|fk| (*fk).clone()).collect::<Vec<_>>())
                         .unwrap_or_default();
-                    if foreign_keys.iter().any(|fk| {
+                    if drop_fks.iter().any(|fk| {
                         fk.foreign_key_columns.len() != 1 || fk.primary_key_columns.len() != 1
                     }) {
                         return Err(crate::errors::Error::UnsupportedFeature(
@@ -189,10 +192,11 @@ pub fn generate_sql_based_on_diff_schema(
                                 .into(),
                         ));
                     }
+                    table_data.push(QueryRelationData::Table(columns.clone()));
                     schema_diff.push(SchemaDiff::DropTable {
                         table,
                         columns,
-                        foreign_keys,
+                        foreign_keys: drop_fks,
                     });
                 }
             }
@@ -348,7 +352,7 @@ pub fn generate_sql_based_on_diff_schema(
                             variants: t
                                 .into_iter()
                                 .map(|v| schema_parsing::EnumVariant {
-                                    sql_name: v.sql_name.clone(),
+                                    sql_name: v.sql_name,
                                 })
                                 .collect(),
                             sql_type: syn::parse_str(&ty.rust_name)?,
@@ -686,11 +690,12 @@ impl SchemaDiff {
                 removed_columns,
                 changed_columns,
             } => {
+                let table_lower = table.to_lowercase();
                 for c in removed_columns
                     .iter()
                     .chain(changed_columns.iter().map(|(a, _)| a))
                 {
-                    generate_drop_column(query_builder, &table.to_lowercase(), &c.sql_name)?;
+                    generate_drop_column(query_builder, &table_lower, &c.sql_name)?;
                     query_builder.push_sql("\n");
                 }
                 let for_record_types =
@@ -708,7 +713,7 @@ impl SchemaDiff {
                 {
                     generate_add_column(
                         query_builder,
-                        &table.to_lowercase(),
+                        &table_lower,
                         &c.column_name.to_string().to_lowercase(),
                         &ColumnType::for_column_def(c)?,
                         enum_sql_types,
@@ -829,6 +834,7 @@ impl SchemaDiff {
                 removed_columns,
                 changed_columns,
             } => {
+                let table_lower = table.to_lowercase();
                 // We don't need to check the `sqlite_integer_primary_key_is_bigint` parameter here
                 // since `ÀLTER TABLE` queries cannot modify primary key columns in SQLite.
                 // See https://www.sqlite.org/lang_altertable.html#alter_table_add_column for more information.
@@ -838,7 +844,7 @@ impl SchemaDiff {
                 {
                     generate_drop_column(
                         query_builder,
-                        &table.to_lowercase(),
+                        &table_lower,
                         &c.column_name.to_string().to_lowercase(),
                     )?;
                     query_builder.push_sql("\n");
@@ -853,7 +859,7 @@ impl SchemaDiff {
                 {
                     generate_add_column(
                         query_builder,
-                        &table.to_lowercase(),
+                        &table_lower,
                         &c.sql_name.to_lowercase(),
                         &c.ty,
                         enum_sql_types,
@@ -1025,6 +1031,8 @@ fn recursive_record_types<'a>(
 fn collect_record_types(column_data: &[ColumnDefinition]) -> Vec<(Cow<'_, str>, &[ColumnType])> {
     column_data
         .iter()
+        // Skip columns that have no record type to avoid allocating the Box<dyn Iterator>.
+        .filter(|c| c.ty.record.is_some())
         .flat_map(|c| {
             recursive_record_types(&c.ty, Cow::Borrowed(c.sql_name.as_str())).chain(
                 std::iter::once((Cow::Borrowed(c.sql_name.as_str()), c.ty.record.as_deref())),
@@ -1139,6 +1147,11 @@ where
     query_builder.push_identifier(table)?;
     query_builder.push_sql("(\n");
     let mut first = true;
+    // Precompute FK lookup by column name to avoid O(C * F) linear scan.
+    let fk_by_col: HashMap<&str, (&str, &str)> = foreign_keys
+        .iter()
+        .map(|(table, col, pk)| (col.as_str(), (table.as_str(), pk.as_str())))
+        .collect();
     let mut foreign_key_list = Vec::with_capacity(foreign_keys.len());
     for column in column_data {
         if first {
@@ -1196,8 +1209,8 @@ where
             query_builder.push_sql(" PRIMARY KEY");
         }
 
-        if let Some((table, _, pk)) = foreign_keys.iter().find(|(_, k, _)| k == &column.rust_name) {
-            foreign_key_list.push((column, table, pk));
+        if let Some(&(fk_table, fk_pk)) = fk_by_col.get(column.rust_name.as_str()) {
+            foreign_key_list.push((column, fk_table, fk_pk));
         }
     }
     if primary_keys.len() > 1 {

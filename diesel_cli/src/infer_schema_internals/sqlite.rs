@@ -85,6 +85,8 @@ pub fn load_foreign_key_constraints(
     schema_name: Option<&str>,
 ) -> Result<Vec<ForeignKeyConstraint>, crate::errors::Error> {
     let tables = load_table_names(connection, schema_name)?;
+    // One query per parent table instead of one per foreign key row.
+    let mut pk_cache: HashMap<String, Vec<String>> = HashMap::new();
     let rows = tables
         .into_iter()
         .map(|(_, child_table)| {
@@ -100,7 +102,11 @@ pub fn load_foreign_key_constraints(
                     let primary_key = if let Some(primary_key) = row.primary_key {
                         vec![primary_key]
                     } else {
-                        get_primary_keys(connection, &parent_table)?
+                        if !pk_cache.contains_key(&parent_table.sql_name) {
+                            let pk = get_primary_keys(connection, &parent_table)?;
+                            pk_cache.insert(parent_table.sql_name.clone(), pk);
+                        }
+                        pk_cache[&parent_table.sql_name].clone()
                     };
                     let foreign_key_columns_rust = super::inference::rust_name_for_sql_name(
                         &row.foreign_key,
@@ -109,7 +115,7 @@ pub fn load_foreign_key_constraints(
                     Ok(ForeignKeyConstraint {
                         child_table: child_table.clone(),
                         parent_table,
-                        foreign_key_columns: vec![row.foreign_key.clone()],
+                        foreign_key_columns: vec![row.foreign_key],
                         foreign_key_columns_rust: vec![foreign_key_columns_rust],
                         primary_key_columns: primary_key,
                     })

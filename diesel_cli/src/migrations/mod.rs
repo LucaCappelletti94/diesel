@@ -245,14 +245,12 @@ pub(super) fn run_migration_command(
             regenerate_schema_if_file_specified(config_file, database_url, locked_schema)?;
         }
         MigrationCommand::List => {
-            let (mut conn, dir) =
-                conn_and_migration_dir(migration_dir, database_url.clone(), config_file.clone())?;
+            let (mut conn, dir) = conn_and_migration_dir(migration_dir, database_url, config_file)?;
 
             list_migrations(&mut conn, dir)?;
         }
         MigrationCommand::Pending => {
-            let (mut conn, dir) =
-                conn_and_migration_dir(migration_dir, database_url.clone(), config_file.clone())?;
+            let (mut conn, dir) = conn_and_migration_dir(migration_dir, database_url, config_file)?;
 
             let result = MigrationHarness::has_pending_migration(&mut conn, dir)
                 .map_err(crate::errors::Error::MigrationError)?;
@@ -284,7 +282,7 @@ pub(super) fn run_migration_command(
                     .cloned()
                     .unwrap_or_else(|| "default".to_string());
 
-                let config = Config::read(config_file.clone())?;
+                let config = Config::read(config_file)?;
                 let mut print_schema = config
                     .print_schema
                     .all_configs
@@ -396,9 +394,8 @@ fn create_migration_dir<'a>(
         let versioned_name = format!("{version}_{migration_name}");
         let path = migrations_dir.join(versioned_name);
 
-        fs::create_dir(&path)
-            .map_err(|e| crate::errors::Error::IoError(e, Some(path.to_path_buf())))?;
-        Ok(path.to_path_buf())
+        fs::create_dir(&path).map_err(|e| crate::errors::Error::IoError(e, Some(path.clone())))?;
+        Ok(path)
     }
 
     let migration_folders: Vec<PathBuf> = migrations_dir

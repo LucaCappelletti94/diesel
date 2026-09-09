@@ -1,6 +1,6 @@
 use super::{
-    ColumnDefinition, QueryRelationData, SupportedQueryRelationStructures, TableName,
-    load_table_data, load_table_names, load_view_data,
+    ColumnDefinition, ForeignKeyConstraint, QueryRelationData, SupportedQueryRelationStructures,
+    TableName, load_table_data, load_table_names, load_view_data,
 };
 use crate::config::PrintSchema;
 use crate::database::InferConnection;
@@ -14,6 +14,7 @@ pub struct SchemaResolverImpl<'a, 'b> {
     pub(super) config: &'b PrintSchema,
     unfiltered_table_names: HashMap<TableName, SupportedQueryRelationStructures>,
     recursive_resolve_chain: Vec<TableName>,
+    pub(super) fk_constraints: Vec<ForeignKeyConstraint>,
 }
 
 impl<'a, 'b> SchemaResolverImpl<'a, 'b> {
@@ -22,6 +23,7 @@ impl<'a, 'b> SchemaResolverImpl<'a, 'b> {
         relations: Vec<(SupportedQueryRelationStructures, TableName)>,
         config: &'b PrintSchema,
         unfiltered_table_names: Vec<(SupportedQueryRelationStructures, TableName)>,
+        fk_constraints: Vec<ForeignKeyConstraint>,
     ) -> Self {
         let unfiltered_table_names = unfiltered_table_names
             .into_iter()
@@ -34,6 +36,7 @@ impl<'a, 'b> SchemaResolverImpl<'a, 'b> {
             config,
             unfiltered_table_names,
             recursive_resolve_chain: Vec::new(),
+            fk_constraints,
         }
     }
 
@@ -90,9 +93,15 @@ impl<'a, 'b> SchemaResolverImpl<'a, 'b> {
                 }
             };
             let data = match kind {
-                SupportedQueryRelationStructures::Table => QueryRelationData::Table(
-                    load_table_data(self.connection, t.clone(), self.config, kind)?,
-                ),
+                SupportedQueryRelationStructures::Table => {
+                    QueryRelationData::Table(load_table_data(
+                        self.connection,
+                        t.clone(),
+                        self.config,
+                        kind,
+                        &self.fk_constraints,
+                    )?)
+                }
                 SupportedQueryRelationStructures::View => {
                     QueryRelationData::View(load_view_data(self, t.clone())?)
                 }
