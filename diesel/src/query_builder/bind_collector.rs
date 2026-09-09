@@ -165,7 +165,7 @@ where
 
     fn append_bind_data(&mut self, from: &Self::BindData) {
         self.binds.extend(from.binds.iter().cloned());
-        self.metadata.extend(from.metadata.clone());
+        self.metadata.extend_from_slice(&from.metadata);
     }
 
     fn push_debug_binds<'a, 'b>(

@@ -59,8 +59,9 @@ mod bigdecimal {
 
             let mut result = BigUint::default();
             let count = i64::try_from(digits.len())?;
+            let base = BigUint::from(10_000u64);
             for digit in digits {
-                result *= BigUint::from(10_000u64);
+                result *= &base;
                 result += BigUint::from(u64::try_from(*digit)?);
             }
             // First digit got factor 10_000^(digits.len() - 1), but should get 10_000^weight

@@ -74,20 +74,30 @@ where
         let mut bytes = value.as_bytes();
         let len = bytes.read_u32::<NetworkEndian>()?;
 
-        (0..len)
-            .map(|_| {
-                let range_size: usize = bytes.read_i32::<NetworkEndian>()?.try_into()?;
-                let (range_bytes, new_bytes) =
-                    bytes.split_at_checked(range_size).ok_or_else(|| {
-                        format!(
-                            "Invalid element byte count: Expected at least {range_size} bytes, but only {} bytes were received",
-                            bytes.len()
-                        )
-                    })?;
-                bytes = new_bytes;
-                FromSql::from_sql(PgValue::new_internal(range_bytes, &value))
-            })
-            .collect()
+        // Each range carries a 4 byte length prefix, so the remaining payload bounds
+        // the range count and a corrupt header cannot request a large allocation.
+        let capacity = usize::try_from(len)
+            .unwrap_or_default()
+            .min(bytes.len() / 4);
+        let mut out = Vec::with_capacity(capacity);
+
+        for _ in 0..len {
+            let range_size: usize = bytes.read_i32::<NetworkEndian>()?.try_into()?;
+            let (range_bytes, new_bytes) =
+                bytes.split_at_checked(range_size).ok_or_else(|| {
+                    format!(
+                        "Invalid element byte count: Expected at least {range_size} bytes, but only {} bytes were received",
+                        bytes.len()
+                    )
+                })?;
+            bytes = new_bytes;
+            out.push(FromSql::from_sql(PgValue::new_internal(
+                range_bytes,
+                &value,
+            ))?);
+        }
+
+        Ok(out)
     }
 }
 

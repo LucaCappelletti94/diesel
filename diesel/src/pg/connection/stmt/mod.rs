@@ -29,23 +29,20 @@ impl Statement {
         param_data: &[Option<Vec<u8>>],
         row_by_row: bool,
     ) -> QueryResult<PgResult> {
-        let params_pointer = param_data
-            .iter()
-            .map(|data| {
-                data.as_ref()
-                    .map(|d| d.as_ptr() as *const libc::c_char)
-                    .unwrap_or(ptr::null())
-            })
-            .collect::<Vec<_>>();
-        let param_lengths = param_data
-            .iter()
-            .map(|data| data.as_ref().map(|d| d.len().try_into()).unwrap_or(Ok(0)))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_: core::num::TryFromIntError| {
+        let mut params_pointer = Vec::with_capacity(param_data.len());
+        let mut param_lengths = Vec::with_capacity(param_data.len());
+        for data in param_data {
+            let (pointer, len) = match data {
+                Some(d) => (d.as_ptr().cast::<libc::c_char>(), d.len()),
+                None => (ptr::null(), 0),
+            };
+            params_pointer.push(pointer);
+            param_lengths.push(libc::c_int::try_from(len).map_err(|_| {
                 crate::result::Error::SerializationError(
                     "A bind parameter's serialized size is bigger than fits on an i32".into(),
                 )
-            })?;
+            })?);
+        }
         let param_count: libc::c_int =
             params_pointer
                 .len()

@@ -64,25 +64,35 @@ where
             return Err("multi-dimensional arrays are not supported".into());
         }
 
-        (0..num_elements)
-            .map(|_| -> deserialize::Result<_> {
-                let elem_size = bytes.read_i32::<NetworkEndian>()?;
-                if has_null && elem_size == -1 {
-                    T::from_nullable_sql(None)
-                } else {
-                    let (elem_bytes, new_bytes) = bytes
-                        .split_at_checked(elem_size.try_into()?)
-                        .ok_or_else(|| {
-                            format!(
-                                "Invalid element byte count: Expected at least {elem_size} bytes, but only {} bytes were received",
-                                bytes.len()
-                            )
-                        })?;
-                    bytes = new_bytes;
-                    T::from_sql(PgValue::new_internal(elem_bytes, &element_oid))
-                }
-            })
-            .collect()
+        // Each element carries a 4 byte length prefix, so the remaining payload bounds
+        // the element count and a corrupt header cannot request a large allocation.
+        let capacity = usize::try_from(num_elements)
+            .unwrap_or_default()
+            .min(bytes.len() / 4);
+        let mut out = Vec::with_capacity(capacity);
+
+        for _ in 0..num_elements {
+            let elem_size = bytes.read_i32::<NetworkEndian>()?;
+            if has_null && elem_size == -1 {
+                out.push(T::from_nullable_sql(None)?);
+            } else {
+                let (elem_bytes, new_bytes) = bytes
+                    .split_at_checked(elem_size.try_into()?)
+                    .ok_or_else(|| {
+                        format!(
+                            "Invalid element byte count: Expected at least {elem_size} bytes, but only {} bytes were received",
+                            bytes.len()
+                        )
+                    })?;
+                bytes = new_bytes;
+                out.push(T::from_sql(PgValue::new_internal(
+                    elem_bytes,
+                    &element_oid,
+                ))?);
+            }
+        }
+
+        Ok(out)
     }
 }
 
@@ -126,25 +136,30 @@ where
             .try_fold(1_usize, |a, b| a.checked_mul(*b))
             .ok_or("Overflow while deserializing package size")?;
 
-        let data = (0..max_dim)
-            .map(|_| -> deserialize::Result<T> {
-                let elem_size = bytes.read_i32::<NetworkEndian>()?;
-                if has_null && elem_size == -1 {
-                    T::from_nullable_sql(None)
-                } else {
-                    let (elem_bytes, new_bytes) = bytes
-                        .split_at_checked(elem_size.try_into()?)
-                        .ok_or_else(|| {
-                            format!(
-                                "Invalid element byte count: Expected at least {elem_size} bytes, but only {} bytes were received",
-                                bytes.len()
-                            )
-                        })?;
-                    bytes = new_bytes;
-                    T::from_sql(PgValue::new_internal(elem_bytes, &element_oid))
-                }
-            })
-            .collect::<deserialize::Result<Vec<T>>>()?;
+        // See the capacity note in the `Vec<T>` impl above.
+        let mut data = Vec::with_capacity(max_dim.min(bytes.len() / 4));
+
+        for _ in 0..max_dim {
+            let elem_size = bytes.read_i32::<NetworkEndian>()?;
+            if has_null && elem_size == -1 {
+                data.push(T::from_nullable_sql(None)?);
+            } else {
+                let (elem_bytes, new_bytes) = bytes
+                    .split_at_checked(elem_size.try_into()?)
+                    .ok_or_else(|| {
+                        format!(
+                            "Invalid element byte count: Expected at least {elem_size} bytes, but only {} bytes were received",
+                            bytes.len()
+                        )
+                    })?;
+                bytes = new_bytes;
+                data.push(T::from_sql(PgValue::new_internal(
+                    elem_bytes,
+                    &element_oid,
+                ))?);
+            }
+        }
+
         Ok(NdArray { dims, data })
     }
 }
