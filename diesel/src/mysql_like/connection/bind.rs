@@ -31,9 +31,12 @@ pub(super) struct OutputBinds {
 
 impl Clone for OutputBinds {
     fn clone(&self) -> Self {
+        let data = self.binds.data.clone();
+        let capacity = data.len();
         Self {
             binds: Binds {
-                data: self.binds.data.clone(),
+                data,
+                bind_cache: Vec::with_capacity(capacity),
             },
             binds_are_invalid: true,
         }
@@ -42,6 +45,7 @@ impl Clone for OutputBinds {
 
 struct Binds {
     data: Vec<BindData>,
+    bind_cache: Vec<ffi::MYSQL_BIND>,
 }
 
 impl PreparedStatementBinds {
@@ -53,8 +57,11 @@ impl PreparedStatementBinds {
             .into_iter()
             .map(BindData::for_input)
             .collect::<Vec<_>>();
-
-        Self(Binds { data })
+        let capacity = data.len();
+        Self(Binds {
+            data,
+            bind_cache: Vec::with_capacity(capacity),
+        })
     }
 
     pub(super) fn with_mysql_binds<F, T>(&mut self, f: F) -> T
@@ -76,9 +83,12 @@ impl OutputBinds {
             .zip(types.iter().copied().chain(core::iter::repeat(None)))
             .map(|(field, tpe)| BindData::for_output(tpe, field))
             .collect::<Result<Vec<_>, _>>()?;
-
+        let capacity = data.len();
         Ok(Self {
-            binds: Binds { data },
+            binds: Binds {
+                data,
+                bind_cache: Vec::with_capacity(capacity),
+            },
             binds_are_invalid: true,
         })
     }
@@ -136,12 +146,14 @@ impl Binds {
     where
         F: FnOnce(*mut ffi::MYSQL_BIND) -> T,
     {
-        let mut binds = self
-            .data
-            .iter_mut()
-            .map(|x| unsafe { x.mysql_bind() })
-            .collect::<Vec<_>>();
-        f(binds.as_mut_ptr())
+        self.bind_cache.clear();
+        // SAFETY: `mysql_bind` requires its result not to outlive the `BindData` it borrows.
+        // The cache lives in the same `Binds`, `self.data` is never pushed to after
+        // construction so element addresses stay put, and refilling here before every handoff
+        // picks up a buffer that a truncated fetch regrew.
+        self.bind_cache
+            .extend(self.data.iter_mut().map(|x| unsafe { x.mysql_bind() }));
+        f(self.bind_cache.as_mut_ptr())
     }
 }
 
@@ -154,7 +166,7 @@ impl Index<usize> for OutputBinds {
 
 bitflags::bitflags! {
     /// See https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub(crate) struct Flags: u32 {
         const NOT_NULL_FLAG = 1;
         const PRI_KEY_FLAG = 2;
@@ -1404,7 +1416,10 @@ mod tests {
         let bind = BindData::from_tpe_and_flags(bind_tpe.into());
 
         let mut binds = OutputBinds {
-            binds: Binds { data: vec![bind] },
+            binds: Binds {
+                data: vec![bind],
+                bind_cache: Vec::with_capacity(1),
+            },
             binds_are_invalid: true,
         };
 
@@ -1452,6 +1467,7 @@ mod tests {
 
         let binds = PreparedStatementBinds(Binds {
             data: vec![id_bind, field_bind],
+            bind_cache: Vec::with_capacity(2),
         });
         stmt.input_bind(binds).unwrap();
         stmt.did_an_error_occur().unwrap();

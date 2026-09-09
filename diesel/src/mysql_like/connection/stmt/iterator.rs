@@ -24,23 +24,28 @@ impl<'a, DB: MysqlLikeBackend> StatementIterator<'a, DB> {
         stmt: MaybeCached<'a, Statement<DB>>,
         types: &[Option<MysqlType>],
     ) -> QueryResult<Self> {
-        let mut stmt = if let Some(metadata) = stmt.metadata()? {
-            let mut output_binds =
-                OutputBinds::from_output_types(types, &metadata).map_err(DeserializationError)?;
-            /*
-                This may seem redundant but if we don't do this we will hit
-                a memory bug in `libmysqlclient`
-            */
-            stmt.execute_statement(&mut output_binds)?
+        let (mut stmt, pre_binds) = if let Some(pre_metadata) = stmt.metadata()? {
+            let mut output_binds = OutputBinds::from_output_types(types, &pre_metadata)
+                .map_err(DeserializationError)?;
+            // Binding before the execute avoids a memory bug in `libmysqlclient`; the same
+            // binds are kept below when the post-execute metadata still matches.
+            let stmt = stmt.execute_statement(&mut output_binds)?;
+            (stmt, Some((pre_metadata, output_binds)))
         } else {
-            //Sometimes we must execute the statement to get its metadata.
-            unsafe { stmt.execute()? }
+            // Sometimes we must execute the statement to get its metadata.
+            // SAFETY: `results` has not been called on this statement, and the binds built
+            // below are registered before the first fetch.
+            let stmt = unsafe { stmt.execute()? };
+            (stmt, None)
         };
 
         let metadata = stmt.metadata()?;
-        let output_binds =
-            OutputBinds::from_output_types(types, &metadata).map_err(DeserializationError)?;
+        let output_binds = match pre_binds {
+            Some((pre_metadata, binds)) if metadata_equivalent(&pre_metadata, &metadata) => binds,
+            _ => OutputBinds::from_output_types(types, &metadata).map_err(DeserializationError)?,
+        };
 
+        // SAFETY: execute or execute_statement was called above; stored result is available.
         let size = unsafe { stmt.result_size() }?;
 
         Ok(StatementIterator {
@@ -50,6 +55,18 @@ impl<'a, DB: MysqlLikeBackend> StatementIterator<'a, DB> {
             stmt,
         })
     }
+}
+
+fn metadata_equivalent(pre: &StatementMetadata, post: &StatementMetadata) -> bool {
+    let pre_fields = pre.fields();
+    let post_fields = post.fields();
+    if pre_fields.len() != post_fields.len() {
+        return false;
+    }
+    pre_fields.iter().zip(post_fields.iter()).all(|(a, b)| {
+        a.field_type() == b.field_type()
+            && matches!((a.flags(), b.flags()), (Ok(af), Ok(bf)) if af == bf)
+    })
 }
 
 impl<DB: MysqlLikeBackend> Iterator for StatementIterator<'_, DB> {
