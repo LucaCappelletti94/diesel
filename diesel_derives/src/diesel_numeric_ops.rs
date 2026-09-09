@@ -12,7 +12,7 @@ pub fn derive(mut item: DeriveInput) -> TokenStream {
         let where_clause = item
             .generics
             .where_clause
-            .get_or_insert(parse_quote!(where));
+            .get_or_insert_with(|| parse_quote!(where));
         where_clause.predicates.push(parse_quote!(Self: Expression));
         where_clause.predicates.push_punct(Default::default());
     }

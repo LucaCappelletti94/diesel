@@ -163,7 +163,7 @@ impl Model {
             .iter()
             .find(|f| {
                 f.column_name()
-                    .map(|c| c == *column_name)
+                    .map(|c| *c == *column_name)
                     .unwrap_or_default()
             })
             .ok_or_else(|| {

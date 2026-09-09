@@ -22,7 +22,7 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
 
     let tokens = derive_inner(
         sql_types,
-        item.generics.clone(),
+        item.generics,
         struct_ty,
         model.foreign_derive,
         model.not_sized,

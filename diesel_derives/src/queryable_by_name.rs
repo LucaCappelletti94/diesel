@@ -27,7 +27,7 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
                 let st = sql_type(f, &model)?;
                 let deserialize_ty = f.ty_for_deserialize();
                 let name = f.column_name()?;
-                let name = LitStr::new(&name.to_string(), name.span());
+                let name = LitStr::new(name.as_str(), name.span());
                 Ok(quote!(
                    {
                        let field = diesel::row::NamedRow::get::<#st, #deserialize_ty>(row, #name)?;
@@ -38,14 +38,19 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let (_, ty_generics, ..) = item.generics.split_for_impl();
-    let mut generics = item.generics.clone();
+    let mut generics = item.generics;
+    let ty_generics = {
+        let (_, tg, ..) = generics.split_for_impl();
+        quote!(#tg)
+    };
     generics
         .params
         .push(parse_quote!(__DB: diesel::backend::Backend));
 
     for field in model.fields() {
-        let where_clause = generics.where_clause.get_or_insert(parse_quote!(where));
+        let where_clause = generics
+            .where_clause
+            .get_or_insert_with(|| parse_quote!(where));
         let span = Span::mixed_site().located_at(field.ty.span());
         let field_ty = field.ty_for_deserialize();
         if field.embed() {
@@ -60,7 +65,7 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         }
     }
     let model = &model;
-    let check_function = if let Some(ref backends) = model.check_for_backend {
+    let check_function = if let Some(backends) = &model.check_for_backend {
         let field_check_bound = model.fields().iter().filter(|f| !f.embed()).flat_map(|f| {
             if let CheckForBackend::Backends(backends) = backends {
                 let iter = backends.iter().map(move |b| {

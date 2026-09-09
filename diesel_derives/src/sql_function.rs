@@ -196,7 +196,7 @@ fn expand_variadic(
     let mut arguments_with_generic_types = vec![];
     for (arg_idx, arg) in input.args.iter().skip(nonvariadic_args_count).enumerate() {
         // If argument is of type that definitely cannot be a generic then we skip it.
-        let Type::Path(ty_path) = arg.ty.clone() else {
+        let Type::Path(ty_path) = &arg.ty else {
             continue;
         };
         let Ok(ty_ident) = ty_path.path.require_ident() else {
@@ -229,16 +229,16 @@ fn expand_variadic(
                 arg.name = format_ident!("{}_{}", arg.name, arg_group_idx + 1);
 
                 if arguments_with_generic_types.contains(&arg_idx) {
-                    let Type::Path(mut ty_path) = arg.ty.clone() else {
+                    let Type::Path(ty_path) = &mut arg.ty else {
                         unreachable!("This argument should have path type as checked earlier")
                     };
-                    let Ok(ident) = ty_path.path.require_ident() else {
-                        unreachable!("This argument should have ident type as checked earlier")
+                    let new_ident = {
+                        let Ok(ident) = ty_path.path.require_ident() else {
+                            unreachable!("This argument should have ident type as checked earlier")
+                        };
+                        format_ident!("{}{}", ident, arg_group_idx + 1)
                     };
-
-                    ty_path.path.segments[0].ident =
-                        format_ident!("{}{}", ident, arg_group_idx + 1);
-                    arg.ty = Type::Path(ty_path);
+                    ty_path.path.segments[0].ident = new_ident;
                 }
 
                 let pair = Pair::new(arg, Some(Token![,]([Span::call_site()])));
@@ -1445,22 +1445,24 @@ fn parse_attribute(attr: syn::Attribute) -> Result<AttributeSpanWrapper<SqlFunct
                         ),
                     )
                 })?;
+            let ident = path
+                .require_ident()
+                .map_err(|e| {
+                    syn::Error::new(
+                        e.span(),
+                        format!("{e}, the correct format is `#[variadic(3)]`"),
+                    )
+                })?
+                .clone();
+            let ident_span = ident.span();
             Ok(AttributeSpanWrapper {
                 item: SqlFunctionAttribute::Variadic {
-                    ident: path
-                        .require_ident()
-                        .map_err(|e| {
-                            syn::Error::new(
-                                e.span(),
-                                format!("{e}, the correct format is `#[variadic(3)]`"),
-                            )
-                        })?
-                        .clone(),
-                    count: count.clone(),
+                    ident,
+                    count,
                     skip_zero_arg_variant: flag,
                 },
                 attribute_span: attr.span(),
-                ident_span: path.require_ident()?.span(),
+                ident_span,
             })
         }
         syn::Meta::NameValue(_) | syn::Meta::Path(_) => Ok(AttributeSpanWrapper {

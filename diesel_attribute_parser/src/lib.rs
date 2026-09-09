@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::fmt::{Display, Formatter};
 
 use proc_macro2::{Span, TokenStream};
@@ -83,6 +84,7 @@ pub enum FieldAttr {
 pub struct SqlIdentifier {
     field_name: String,
     span: Span,
+    ident: OnceCell<Ident>,
 }
 
 impl SqlIdentifier {
@@ -90,11 +92,22 @@ impl SqlIdentifier {
         self.span
     }
 
-    pub fn to_ident(&self) -> Result<Ident> {
+    /// The identifier text without any `r#` prefix.
+    pub fn as_str(&self) -> &str {
+        self.field_name
+            .strip_prefix("r#")
+            .unwrap_or(&self.field_name)
+    }
+
+    /// Cached because the derives ask each field for its identifier about a dozen times.
+    pub fn to_ident(&self) -> Result<&Ident> {
+        if let Some(ident) = self.ident.get() {
+            return Ok(ident);
+        }
         match syn::parse_str::<Ident>(&format!("r#{}", self.field_name)) {
             Ok(mut ident) => {
                 ident.set_span(self.span);
-                Ok(ident)
+                Ok(self.ident.get_or_init(|| ident))
             }
             Err(_e) if self.field_name.contains(' ') => Err(syn::Error::new(
                 self.span(),
@@ -150,6 +163,7 @@ impl From<&'_ Ident> for SqlIdentifier {
         Self {
             span: ident.span(),
             field_name: ident.to_string(),
+            ident: OnceCell::new(),
         }
     }
 }
@@ -166,6 +180,7 @@ impl Parse for SqlIdentifier {
             Ok(Self {
                 field_name: name.value(),
                 span: name.span(),
+                ident: OnceCell::new(),
             })
         }
     }

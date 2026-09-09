@@ -4,6 +4,7 @@ use syn::DeriveInput;
 struct ConnectionVariant<'a> {
     ty: &'a syn::Type,
     name: &'a syn::Ident,
+    lower_name: syn::Ident,
 }
 
 pub fn derive(item: DeriveInput) -> TokenStream {
@@ -16,6 +17,10 @@ pub fn derive(item: DeriveInput) -> TokenStream {
                 syn::Fields::Unnamed(f) if f.unnamed.len() == 1 => ConnectionVariant {
                     ty: &f.unnamed.first().unwrap().ty,
                     name: &v.ident,
+                    lower_name: syn::Ident::new(
+                        &v.ident.to_string().to_lowercase(),
+                        v.ident.span(),
+                    ),
                 },
                 _ => panic!("Only enums with one field per variant are supported"),
             })
@@ -1070,7 +1075,7 @@ fn generate_bind_collector(
 
     let multi_bind_collector_accessor = connection_types.iter().map(|c| {
         let ident = c.name;
-        let lower_ident = syn::Ident::new(&c.name.to_string().to_lowercase(), c.name.span());
+        let lower_ident = &c.lower_name;
         let ty = c.ty;
         quote::quote! {
             pub(super) fn #lower_ident(
@@ -1496,7 +1501,7 @@ fn generate_querybuilder(
     let into_variant_functions = connection_types.iter().map(|c|{
         let ty = c.ty;
         let ident = c.name;
-        let lower_ident = syn::Ident::new(&ident.to_string().to_lowercase(), ident.span());
+        let lower_ident = &c.lower_name;
         quote::quote! {
             pub(super) fn #lower_ident(&mut self) -> &mut <<#ty as #conn_backend>::Backend as diesel::backend::Backend>::QueryBuilder {
                 match self {
@@ -1585,7 +1590,7 @@ fn generate_querybuilder(
 
     let insert_values_impl_variants = connection_types.iter().map(|c| {
         let ident = c.name;
-        let lower_ident = syn::Ident::new(&ident.to_string().to_lowercase(), c.name.span());
+        let lower_ident = &c.lower_name;
         let ty = c.ty;
         quote::quote! {
             super::backend::MultiBackend::#ident(_) => {
@@ -1969,7 +1974,7 @@ fn generate_backend(connection_types: &[ConnectionVariant], helper: &MultiHelper
     let into_variant_functions = connection_types.iter().map(|c| {
         let ty = c.ty;
         let ident = c.name;
-        let lower_ident = syn::Ident::new(&ident.to_string().to_lowercase(), ident.span());
+        let lower_ident = &c.lower_name;
         quote::quote! {
             pub(super) fn #lower_ident(&self) -> &<#ty as #conn_backend>::Backend {
                 match self {
@@ -1999,7 +2004,7 @@ fn generate_backend(connection_types: &[ConnectionVariant], helper: &MultiHelper
 
     let query_fragment_impl_variants = connection_types.iter().map(|c| {
         let ident = c.name;
-        let lower_ident = syn::Ident::new(&ident.to_string().to_lowercase(), c.name.span());
+        let lower_ident = &c.lower_name;
         let ty = c.ty;
         quote::quote! {
             super::backend::MultiBackend::#ident(_) => {

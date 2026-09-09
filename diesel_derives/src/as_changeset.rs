@@ -23,7 +23,7 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
             !model
                 .primary_key_names
                 .iter()
-                .any(|p| f.column_name().map(|f| f == *p).unwrap_or_default())
+                .any(|p| f.column_name().map(|f| *f == *p).unwrap_or_default())
         })
         .collect::<Vec<_>>();
 
@@ -257,7 +257,7 @@ fn generate_field_bound(
         table_name,
         ty.unwrap_or_else(|| field_changeset_actual_ty(field, treat_none_as_null)),
         treat_none_as_null,
-        borrowed.clone(),
+        borrowed,
         guard,
     )?;
     Ok((ty_for_guard, as_expression_bound))

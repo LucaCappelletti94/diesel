@@ -51,7 +51,9 @@ fn derive_belongs_to(item: &DeriveInput, model: &Model, assoc: &BelongsTo) -> Re
 
     generics.params.push(parse_quote!(__FK));
     {
-        let where_clause = generics.where_clause.get_or_insert(parse_quote!(where));
+        let where_clause = generics
+            .where_clause
+            .get_or_insert_with(|| parse_quote!(where));
         where_clause
             .predicates
             .push(parse_quote!(__FK: std::hash::Hash + std::cmp::Eq));

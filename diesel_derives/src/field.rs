@@ -7,7 +7,7 @@ pub struct Field {
     pub ty: Type,
     pub span: Span,
     pub name: FieldName,
-    column_name: Option<AttributeSpanWrapper<SqlIdentifier>>,
+    column_name: std::result::Result<SqlIdentifier, syn::Error>,
     pub sql_type: Option<AttributeSpanWrapper<Type>>,
     pub treat_none_as_default_value: Option<AttributeSpanWrapper<bool>>,
     pub treat_none_as_null: Option<AttributeSpanWrapper<bool>>,
@@ -135,6 +135,17 @@ impl Field {
         };
         let span = Span::mixed_site().located_at(span);
 
+        let column_name = match column_name {
+            Some(a) => Ok(a.item),
+            None => match &name {
+                FieldName::Named(x) => Ok(x.into()),
+                FieldName::Unnamed(x) => Err(syn::Error::new(
+                    x.span(),
+                    "all fields of tuple structs must be annotated with `#[diesel(column_name)]`",
+                )),
+            },
+        };
+
         Ok(Self {
             ty: ty.clone(),
             span,
@@ -153,19 +164,8 @@ impl Field {
         })
     }
 
-    pub fn column_name(&self) -> Result<SqlIdentifier> {
-        let identifier = self.column_name.as_ref().map(|a| a.item.clone());
-        if let Some(identifier) = identifier {
-            Ok(identifier)
-        } else {
-            match self.name {
-                FieldName::Named(ref x) => Ok(x.into()),
-                FieldName::Unnamed(ref x) => Err(syn::Error::new(
-                    x.span(),
-                    "all fields of tuple structs must be annotated with `#[diesel(column_name)]`",
-                )),
-            }
-        }
+    pub fn column_name(&self) -> Result<&SqlIdentifier> {
+        self.column_name.as_ref().map_err(Clone::clone)
     }
 
     pub fn ty_for_deserialize(&self) -> &Type {

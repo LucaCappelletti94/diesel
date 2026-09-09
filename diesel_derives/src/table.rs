@@ -222,41 +222,10 @@ fn generate_kind_specific_impls(
     }
 }
 
-fn collect_cfg_groups<'a>(
-    columns: impl IntoIterator<Item = &'a ColumnDef> + Clone,
-) -> Vec<CfgGroup<'a>> {
-    use std::collections::HashMap;
-
-    // syn::Attribute does not implement Hash, so we key by its token-stream
-    // string representation.
-    let mut groups_map: HashMap<String, CfgGroup<'a>> = HashMap::new();
-
-    for col in columns.clone() {
-        let cfg_attrs = cfg_attributes(&col.meta);
-        if cfg_attrs.is_empty() {
-            continue;
-        }
-
-        let key = cfg_attrs
-            .iter()
-            .map(|a| quote::quote!(#a).to_string())
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        groups_map
-            .entry(key)
-            .or_insert_with(|| CfgGroup {
-                cfg_attrs: cfg_attrs.clone(),
-                columns: Vec::new(),
-            })
-            .columns
-            .push(col);
-    }
-
-    // Order groups by first occurrence in the original column list so that
-    // generated cfg-combination output is deterministic.
+fn collect_cfg_groups<'a>(columns: impl IntoIterator<Item = &'a ColumnDef>) -> Vec<CfgGroup<'a>> {
+    // syn::Attribute does not implement Hash, so key by token-stream string.
     let mut groups: Vec<CfgGroup<'a>> = Vec::new();
-    let mut seen_keys = std::collections::HashSet::new();
+    let mut key_index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
     for col in columns {
         let cfg_attrs = cfg_attributes(&col.meta);
@@ -264,16 +233,23 @@ fn collect_cfg_groups<'a>(
             continue;
         }
 
-        let key = cfg_attrs
+        let key: String = cfg_attrs
             .iter()
             .map(|a| quote::quote!(#a).to_string())
             .collect::<Vec<_>>()
             .join(" ");
 
-        if !seen_keys.contains(&key) {
-            seen_keys.insert(key.clone());
-            if let Some(group) = groups_map.remove(&key) {
-                groups.push(group);
+        match key_index.entry(key) {
+            std::collections::hash_map::Entry::Occupied(e) => {
+                groups[*e.get()].columns.push(col);
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                let idx = groups.len();
+                groups.push(CfgGroup {
+                    cfg_attrs: cfg_attrs.clone(),
+                    columns: vec![col],
+                });
+                e.insert(idx);
             }
         }
     }
@@ -362,6 +338,7 @@ fn expand(input: TableDecl, kind: QuerySourceMacroKind) -> TokenStream {
                 }
             }
             None => {
+                use std::fmt::Write as _;
                 let mut message = format!(
                     "neither an explicit primary key found nor does an `id` column exist.\n\
                  consider explicitly defining a primary key. \n\
@@ -371,7 +348,7 @@ fn expand(input: TableDecl, kind: QuerySourceMacroKind) -> TokenStream {
                     key = column_names[0],
                     table = input.view.table_name,
                 );
-                message += &format!("\t{table_name} ({}) {{\n", column_names[0]);
+                writeln!(message, "\t{table_name} ({}) {{", column_names[0]).unwrap();
                 for c in &input.view.column_defs {
                     let tpe = c
                         .tpe
@@ -381,7 +358,7 @@ fn expand(input: TableDecl, kind: QuerySourceMacroKind) -> TokenStream {
                         .map(|p| p.ident.to_string())
                         .collect::<Vec<_>>()
                         .join("::");
-                    message += &format!("\t\t{} -> {tpe},\n", c.column_name);
+                    writeln!(message, "\t\t{} -> {tpe},", c.column_name).unwrap();
                 }
                 message += "\t}\n}";
 
@@ -868,7 +845,7 @@ fn expand(input: TableDecl, kind: QuerySourceMacroKind) -> TokenStream {
 fn generate_valid_grouping_for_table_columns(table: &TableDecl) -> Vec<TokenStream> {
     let mut ret = Vec::with_capacity(table.view.column_defs.len() * table.view.column_defs.len());
 
-    let primary_key = if let Some(ref pk) = table.primary_keys {
+    let primary_key = if let Some(pk) = &table.primary_keys {
         if pk.keys.len() == 1 {
             pk.keys.first().map(ToString::to_string)
         } else {
@@ -878,15 +855,17 @@ fn generate_valid_grouping_for_table_columns(table: &TableDecl) -> Vec<TokenStre
         Some(DEFAULT_PRIMARY_KEY_NAME.into())
     };
 
-    for (id, right_col_def) in table.view.column_defs.iter().enumerate() {
-        for left_col_def in table.view.column_defs.iter().skip(id) {
-            let right_to_left = if Some(left_col_def.column_name.to_string()) == primary_key {
-                Ident::new("Yes", proc_macro2::Span::mixed_site())
-            } else {
-                Ident::new("No", proc_macro2::Span::mixed_site())
-            };
+    let pk = primary_key.as_deref();
 
-            let left_to_right = if Some(right_col_def.column_name.to_string()) == primary_key {
+    for (id, right_col_def) in table.view.column_defs.iter().enumerate() {
+        let left_to_right = if pk.is_some_and(|p| right_col_def.column_name == p) {
+            Ident::new("Yes", proc_macro2::Span::mixed_site())
+        } else {
+            Ident::new("No", proc_macro2::Span::mixed_site())
+        };
+
+        for left_col_def in table.view.column_defs.iter().skip(id) {
+            let right_to_left = if pk.is_some_and(|p| left_col_def.column_name == p) {
                 Ident::new("Yes", proc_macro2::Span::mixed_site())
             } else {
                 Ident::new("No", proc_macro2::Span::mixed_site())
@@ -961,10 +940,9 @@ fn is_numeric(ty: &syn::TypePath) -> bool {
                 if (last.ident == "Nullable" || last.ident == "Unsigned") && t.args.len() == 1 =>
             {
                 if let Some(syn::GenericArgument::Type(syn::Type::Path(t))) = t.args.first() {
-                    NUMERIC_TYPES.iter().any(|i| {
-                        t.path.segments.last().map(|s| s.ident.to_string())
-                            == Some(String::from(*i))
-                    })
+                    NUMERIC_TYPES
+                        .iter()
+                        .any(|i| t.path.segments.last().is_some_and(|s| s.ident == *i))
                 } else {
                     false
                 }
@@ -984,10 +962,9 @@ fn is_date_time(ty: &syn::TypePath) -> bool {
                 if last.ident == "Nullable" && t.args.len() == 1 =>
             {
                 if let Some(syn::GenericArgument::Type(syn::Type::Path(t))) = t.args.first() {
-                    DATE_TYPES.iter().any(|i| {
-                        t.path.segments.last().map(|s| s.ident.to_string())
-                            == Some(String::from(*i))
-                    })
+                    DATE_TYPES
+                        .iter()
+                        .any(|i| t.path.segments.last().is_some_and(|s| s.ident == *i))
                 } else {
                     false
                 }
@@ -1008,10 +985,9 @@ fn is_network(ty: &syn::TypePath) -> bool {
                 if last.ident == "Nullable" && t.args.len() == 1 =>
             {
                 if let Some(syn::GenericArgument::Type(syn::Type::Path(t))) = t.args.first() {
-                    NETWORK_TYPES.iter().any(|i| {
-                        t.path.segments.last().map(|s| s.ident.to_string())
-                            == Some(String::from(*i))
-                    })
+                    NETWORK_TYPES
+                        .iter()
+                        .any(|i| t.path.segments.last().is_some_and(|s| s.ident == *i))
                 } else {
                     false
                 }

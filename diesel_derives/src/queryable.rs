@@ -24,24 +24,27 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         // itself without going through the trait
         quote!(#field_name: row.#i.try_into()?)
     });
-    let sql_type = &(0..model.fields().len())
-        .map(|i| {
-            let i = Ident::new(&format!("__ST{i}"), Span::mixed_site());
-            quote!(#i)
-        })
-        .collect::<Vec<_>>();
+    let st_idents: Vec<Ident> = (0..model.fields().len())
+        .map(|i| Ident::new(&format!("__ST{i}"), Span::mixed_site()))
+        .collect();
+    let sql_type = st_idents.iter().map(|i| quote!(#i)).collect::<Vec<_>>();
+    let sql_type = &sql_type;
 
-    let (_, ty_generics, _) = item.generics.split_for_impl();
-    let mut generics = item.generics.clone();
+    let mut generics = item.generics;
+    let ty_generics = {
+        let (_, tg, _) = generics.split_for_impl();
+        quote!(#tg)
+    };
     generics
         .params
         .push(parse_quote!(__DB: diesel::backend::Backend));
-    for id in 0..model.fields().len() {
-        let ident = Ident::new(&format!("__ST{id}"), Span::mixed_site());
+    for ident in &st_idents {
         generics.params.push(parse_quote!(#ident));
     }
     {
-        let where_clause = generics.where_clause.get_or_insert(parse_quote!(where));
+        let where_clause = generics
+            .where_clause
+            .get_or_insert_with(|| parse_quote!(where));
         where_clause
             .predicates
             .push(parse_quote!((#(#field_ty,)*): diesel::deserialize::FromStaticSqlRow<(#(#sql_type,)*), __DB>));
