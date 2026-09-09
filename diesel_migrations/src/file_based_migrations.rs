@@ -217,19 +217,10 @@ impl<DB: Backend> Migration<DB> for SqlFileMigration {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DieselMigrationName {
     name: String,
-    version: MigrationVersion<'static>,
-}
-
-impl Clone for DieselMigrationName {
-    fn clone(&self) -> Self {
-        Self {
-            name: self.name.clone(),
-            version: self.version.as_owned(),
-        }
-    }
+    version: String,
 }
 
 impl DieselMigrationName {
@@ -246,14 +237,14 @@ impl DieselMigrationName {
             .ok_or_else(|| MigrationError::UnknownMigrationFormat(PathBuf::from(name)))?;
         Ok(Self {
             name: name.to_owned(),
-            version: MigrationVersion::from(version),
+            version,
         })
     }
 }
 
 impl MigrationName for DieselMigrationName {
     fn version(&self) -> MigrationVersion<'_> {
-        self.version.as_owned()
+        MigrationVersion::from(self.version.as_str())
     }
 }
 

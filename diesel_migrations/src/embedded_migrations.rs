@@ -61,22 +61,19 @@ impl EmbeddedMigration {
 #[doc(hidden)]
 pub struct EmbeddedName {
     name: &'static str,
+    version: &'static str,
 }
 
 impl EmbeddedName {
     #[doc(hidden)]
-    pub const fn new(name: &'static str) -> Self {
-        Self { name }
+    pub const fn new(name: &'static str, version: &'static str) -> Self {
+        Self { name, version }
     }
 }
 
 impl MigrationName for EmbeddedName {
     fn version(&self) -> MigrationVersion<'_> {
-        migrations_internals::version_from_string(self.name)
-            .expect(
-                "This name contains a valid version. We checked this at compile time by our macro",
-            )
-            .into()
+        MigrationVersion::from(self.version)
     }
 }
 

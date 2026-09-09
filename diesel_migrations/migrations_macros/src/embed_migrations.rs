@@ -41,13 +41,13 @@ fn migration_literal_from_path(path: &Path) -> proc_macro2::TokenStream {
         .file_name()
         .unwrap_or_else(|| panic!("Can't get file name from path `{path:?}`"))
         .to_string_lossy();
-    if version_from_string(&name).is_none() {
+    let version = version_from_string(&name).unwrap_or_else(|| {
         panic!(
             "Invalid migration directory: the directory's name should be \
              <timestamp>_<name_of_migration>, and it should contain \
              up.sql and optionally down.sql."
-        );
-    }
+        )
+    });
     let up_sql_path = path.join("up.sql");
     let up_sql_path = up_sql_path.to_str();
     let down_sql_path = path.join("down.sql");
@@ -65,7 +65,7 @@ fn migration_literal_from_path(path: &Path) -> proc_macro2::TokenStream {
     quote!(diesel_migrations::EmbeddedMigration::new(
         include_str!(#up_sql_path),
         #down_sql,
-        diesel_migrations::EmbeddedName::new(#name),
+        diesel_migrations::EmbeddedName::new(#name, #version),
         diesel_migrations::TomlMetadataWrapper::new(#run_in_transaction)
     ))
 }
