@@ -31,7 +31,11 @@ impl QueryBuilder<Sqlite> for SqliteQueryBuilder {
 
     fn push_identifier(&mut self, identifier: &str) -> QueryResult<()> {
         self.push_sql("`");
-        self.push_sql(&identifier.replace('`', "``"));
+        if identifier.contains('`') {
+            self.push_sql(&identifier.replace('`', "``"));
+        } else {
+            self.push_sql(identifier);
+        }
         self.push_sql("`");
         Ok(())
     }
@@ -42,5 +46,18 @@ impl QueryBuilder<Sqlite> for SqliteQueryBuilder {
 
     fn finish(self) -> String {
         self.sql
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[diesel_test_helper::test]
+    fn push_identifier_escapes_embedded_backticks() {
+        let mut builder = SqliteQueryBuilder::new();
+        builder.push_identifier("users").unwrap();
+        builder.push_identifier("we`ird").unwrap();
+        assert_eq!(builder.finish(), "`users``we``ird`");
     }
 }

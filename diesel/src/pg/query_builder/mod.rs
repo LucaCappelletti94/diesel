@@ -37,7 +37,11 @@ impl QueryBuilder<Pg> for PgQueryBuilder {
 
     fn push_identifier(&mut self, identifier: &str) -> QueryResult<()> {
         self.push_sql("\"");
-        self.push_sql(&identifier.replace('"', "\"\""));
+        if identifier.contains('"') {
+            self.push_sql(&identifier.replace('"', "\"\""));
+        } else {
+            self.push_sql(identifier);
+        }
         self.push_sql("\"");
         Ok(())
     }
@@ -56,6 +60,15 @@ impl QueryBuilder<Pg> for PgQueryBuilder {
     fn finish(self) -> String {
         self.sql
     }
+}
+
+#[cfg(test)]
+#[diesel_test_helper::test]
+fn push_identifier_escapes_embedded_quotes() {
+    let mut builder = PgQueryBuilder::new();
+    builder.push_identifier("users").unwrap();
+    builder.push_identifier("we\"ird").unwrap();
+    assert_eq!(builder.finish(), "\"users\"\"we\"\"ird\"");
 }
 
 #[cfg(test)]

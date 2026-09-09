@@ -43,7 +43,11 @@ impl<DB: Backend> QueryBuilder<DB> for MysqlLikeQueryBuilder<DB> {
 
     fn push_identifier(&mut self, identifier: &str) -> QueryResult<()> {
         self.push_sql("`");
-        self.push_sql(&identifier.replace('`', "``"));
+        if identifier.contains('`') {
+            self.push_sql(&identifier.replace('`', "``"));
+        } else {
+            self.push_sql(identifier);
+        }
         self.push_sql("`");
         Ok(())
     }
@@ -54,5 +58,23 @@ impl<DB: Backend> QueryBuilder<DB> for MysqlLikeQueryBuilder<DB> {
 
     fn finish(self) -> String {
         self.sql
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "mysql_backend")]
+    type TestBackend = crate::mysql::Mysql;
+    #[cfg(all(not(feature = "mysql_backend"), feature = "mariadb_backend"))]
+    type TestBackend = crate::mariadb::Mariadb;
+
+    #[diesel_test_helper::test]
+    fn push_identifier_escapes_embedded_backticks() {
+        let mut builder = MysqlLikeQueryBuilder::<TestBackend>::new();
+        builder.push_identifier("users").unwrap();
+        builder.push_identifier("we`ird").unwrap();
+        assert_eq!(builder.finish(), "`users``we``ird`");
     }
 }
