@@ -38,6 +38,12 @@ impl Statement {
         is_cached: PrepareForCache,
         _: &[SqliteType],
     ) -> QueryResult<Self> {
+        // A non-negative n_byte makes the input length delimited, so no NUL terminator is needed.
+        // An interior NUL must still error: SQLite would prepare only the prefix and the unused
+        // portion is never inspected.
+        if sql.as_bytes().contains(&0) {
+            CString::new(sql)?;
+        }
         let mut stmt = ptr::null_mut();
         let mut unused_portion = ptr::null();
         let n_byte = sql
@@ -49,7 +55,7 @@ impl Statement {
         let prepare_result = unsafe {
             ffi::sqlite3_prepare_v3(
                 raw_connection.internal_connection.as_ptr(),
-                CString::new(sql)?.as_ptr(),
+                sql.as_ptr().cast::<libc::c_char>(),
                 n_byte,
                 if matches!(is_cached, PrepareForCache::Yes { counter: _ }) {
                     ffi::SQLITE_PREPARE_PERSISTENT as u32
@@ -617,5 +623,16 @@ mod tests {
         } else {
             panic!("Wrong error returned");
         }
+    }
+
+    #[diesel_test_helper::test]
+    fn prepare_rejects_interior_nul_byte() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        // NUL bytes are unreachable through the typed DSL; sql_query is the only path.
+        let result = crate::sql_query("SELECT 1\0; DROP TABLE nonexistent").execute(&mut conn);
+        assert!(
+            matches!(result, Err(crate::result::Error::InvalidCString(_))),
+            "expected InvalidCString, got {result:?}"
+        );
     }
 }
