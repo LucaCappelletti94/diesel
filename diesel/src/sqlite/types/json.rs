@@ -160,8 +160,8 @@ mod jsonb {
                         return Err("No value found for object".into());
                     }
                     let (value_header, value) = read_header_and_value(payload)?;
-                    object.insert(key.clone(), value);
-                    let last_ref = object.get_mut(&key).expect("We inserted it above");
+                    let last_ref = object.entry(key).or_insert(serde_json::Value::Null);
+                    *last_ref = value;
                     let payload_size = if last_ref.is_object() || last_ref.is_array() {
                         stack.push((last_ref as *mut _, total_read + value_header.total_size));
                         value_header.header_size
@@ -601,8 +601,8 @@ mod jsonb {
 
     pub(super) fn write_jsonb_textj(s: &str, buffer: &mut Vec<u8>) -> serialize::Result {
         // Escaping the string for JSON (e.g., \n, \uXXXX)
-        let escaped_string = serde_json::to_string(&String::from(s))
-            .map_err(|_| "Failed to serialize string for TEXTJ")?;
+        let escaped_string =
+            serde_json::to_string(s).map_err(|_| "Failed to serialize string for TEXTJ")?;
 
         // Remove the surrounding quotes from serde_json::to_string result
         let escaped_string = &escaped_string[1..escaped_string.len() - 1];
