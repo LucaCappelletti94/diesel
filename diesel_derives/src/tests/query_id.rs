@@ -17,6 +17,21 @@ pub(crate) fn query_id_1() {
 }
 
 #[test]
+pub(crate) fn query_id_crate_path() {
+    let input = quote::quote! {
+        #[diesel(crate = ::my_diesel)]
+        struct Query;
+    };
+
+    expand_with(
+        &crate::derive_query_id_inner as &dyn Fn(_) -> _,
+        input,
+        derive(syn::parse_quote!(#[derive(QueryId)])),
+        "query_id_crate_path",
+    );
+}
+
+#[test]
 pub(crate) fn query_id_lifetime() {
     let input = quote::quote! {
         struct Query<'a> { f: &'a str }

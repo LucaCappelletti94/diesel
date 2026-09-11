@@ -35,3 +35,20 @@ pub(crate) fn insertable_table_name_1() {
         "insertable_table_name_1",
     );
 }
+
+#[test]
+pub(crate) fn insertable_crate_path() {
+    let input = quote::quote! {
+        #[diesel(crate = ::my_diesel, table_name = crate::schema::users)]
+        struct User {
+            id: i32,
+            name: String,
+        }
+    };
+    expand_with(
+        &crate::derive_insertable_inner as &dyn Fn(_) -> _,
+        input,
+        derive(syn::parse_quote!(#[derive(Insertable)])),
+        "insertable_crate_path",
+    );
+}

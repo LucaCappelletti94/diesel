@@ -4,7 +4,6 @@ use syn::Result;
 use syn::{DeriveInput, Ident};
 
 use crate::model::Model;
-use crate::util::wrap_in_dummy_mod;
 use diesel_attribute_parser::parsers::PostgresType;
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
@@ -48,7 +47,9 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         None
     };
 
-    Ok(wrap_in_dummy_mod(quote! {
+    let crate_path = model.crate_path();
+
+    Ok(crate_path.wrap_in_dummy_mod(quote! {
         impl #impl_generics diesel::sql_types::SqlType
             for #struct_name #ty_generics
         #where_clause

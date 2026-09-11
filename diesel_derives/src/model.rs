@@ -18,6 +18,7 @@ use diesel_attribute_parser::{StructAttr, parse_attributes};
 
 pub struct Model {
     name: Path,
+    crate_path: Option<Path>,
     table_names: Vec<Path>,
     pub primary_key_names: Vec<Ident>,
     treat_none_as_default_value: Option<LitBool>,
@@ -83,6 +84,7 @@ impl Model {
         let mut check_for_backend = None;
         let mut base_query = None;
         let mut base_query_type = None;
+        let mut crate_path = None;
 
         for attr in parse_attributes(attrs)? {
             match attr.item {
@@ -118,7 +120,10 @@ impl Model {
                 }
                 StructAttr::BaseQuery(_, e) => base_query = Some(e),
                 StructAttr::BaseQueryType(_, t) => base_query_type = Some(t),
-                StructAttr::RenameAll(_, _) => { /*ignore here as only relevant for enums*/ }
+                StructAttr::CratePath(_, path) => crate_path = Some(path),
+                StructAttr::RenameAll(_, _) | StructAttr::InternalIsWindow(_, _) => {
+                    /*ignore here as only relevant for other derives*/
+                }
             }
         }
 
@@ -126,6 +131,7 @@ impl Model {
 
         Ok(Self {
             name,
+            crate_path,
             table_names,
             primary_key_names,
             treat_none_as_default_value,
@@ -152,6 +158,10 @@ impl Model {
             0 => from_ref(&self.name),
             _ => &self.table_names,
         }
+    }
+
+    pub fn crate_path(&self) -> crate::util::CratePath<'_> {
+        crate::util::CratePath::new(self.crate_path.as_ref())
     }
 
     pub fn fields(&self) -> &[Field] {

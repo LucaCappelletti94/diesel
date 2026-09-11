@@ -70,7 +70,7 @@ pub(crate) fn derive(item: DeriveInput) -> syn::Result<TokenStream> {
     let queryable = super::queryable::derive(item.clone())?;
 
     let ident = &item.ident;
-    let model = Model::from_item(&item, false, false)?;
+    let mut model = Model::from_item(&item, false, false)?;
     let (_original_impl_generics, ty_generics, _original_where_clause) =
         item.generics.split_for_impl();
 
@@ -83,8 +83,8 @@ pub(crate) fn derive(item: DeriveInput) -> syn::Result<TokenStream> {
 
     let mut errors = Vec::new();
 
-    let (query_expr, query_type) = if let Some(base_query) = model.base_query {
-        if let Some(query_type) = model.base_query_type {
+    let (query_expr, query_type) = if let Some(base_query) = model.base_query.take() {
+        if let Some(query_type) = model.base_query_type.take() {
             (base_query, query_type)
         } else {
             use dsl_auto_type::auto_type::expression_type_inference as type_inference;
@@ -116,7 +116,8 @@ pub(crate) fn derive(item: DeriveInput) -> syn::Result<TokenStream> {
         (query_expr, query_type)
     };
 
-    let mut query_model = crate::util::wrap_in_dummy_mod(quote::quote! {
+    let crate_path = model.crate_path();
+    let mut query_model = crate_path.wrap_in_dummy_mod(quote::quote! {
         impl #impl_generics diesel::HasQuery<__DB> for #ident #ty_generics #where_clause {
             type BaseQuery = #query_type;
 

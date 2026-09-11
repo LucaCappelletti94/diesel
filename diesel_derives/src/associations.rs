@@ -5,7 +5,7 @@ use syn::parse_quote;
 use syn::{DeriveInput, Ident, Lifetime, Result};
 
 use crate::model::Model;
-use crate::util::{camel_to_snake, wrap_in_dummy_mod};
+use crate::util::camel_to_snake;
 use diesel_attribute_parser::parsers::BelongsTo;
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
@@ -24,7 +24,9 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         .map(|assoc| derive_belongs_to(&item, &model, assoc))
         .collect::<Result<Vec<_>>>()?;
 
-    Ok(wrap_in_dummy_mod(quote!(#(#tokens)*)))
+    let crate_path = model.crate_path();
+
+    Ok(crate_path.wrap_in_dummy_mod(quote!(#(#tokens)*)))
 }
 
 fn derive_belongs_to(item: &DeriveInput, model: &Model, assoc: &BelongsTo) -> Result<TokenStream> {

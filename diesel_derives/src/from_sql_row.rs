@@ -5,12 +5,14 @@ use syn::Result;
 use syn::parse_quote;
 
 use crate::model::Model;
-use crate::util::{ty_for_foreign_derive, wrap_in_dummy_mod};
+use crate::util::ty_for_foreign_derive;
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
     let model = Model::from_item(&item, true, false)?;
     let struct_ty = ty_for_foreign_derive(&item, &model)?;
-    Ok(wrap_in_dummy_mod(derive_inner(struct_ty, item.generics)?))
+    Ok(model
+        .crate_path()
+        .wrap_in_dummy_mod(derive_inner(struct_ty, item.generics)?))
 }
 
 pub fn derive_inner(struct_ty: syn::Type, mut generics: syn::Generics) -> Result<TokenStream> {

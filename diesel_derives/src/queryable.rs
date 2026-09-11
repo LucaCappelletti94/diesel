@@ -4,7 +4,6 @@ use syn::{DeriveInput, Ident, Index, Result, parse_quote};
 
 use crate::field::Field;
 use crate::model::Model;
-use crate::util::wrap_in_dummy_mod;
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
     let model = Model::from_item(&item, false, true)?;
@@ -48,20 +47,23 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
     }
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
-    Ok(wrap_in_dummy_mod(quote! {
-        use diesel::row::{Row as _, Field as _};
+    let crate_path = model.crate_path();
 
-        impl #impl_generics diesel::deserialize::Queryable<(#(#sql_type,)*), __DB> for #struct_name #ty_generics
-            #where_clause
-        {
-            type Row = (#(#field_ty,)*);
+    Ok(crate_path.wrap_in_dummy_mod(quote! {
+            use diesel::row::{Row as _, Field as _};
 
-            fn build(row: (#(#field_ty,)*)) -> diesel::deserialize::Result<Self> {
-                use std::convert::TryInto;
-                diesel::deserialize::Result::Ok(Self {
-                    #(#build_expr,)*
-                })
+            impl #impl_generics diesel::deserialize::Queryable<(#(#sql_type,)*), __DB> for #struct_name #ty_generics
+                #where_clause
+            {
+                type Row = (#(#field_ty,)*);
+
+                fn build(row: (#(#field_ty,)*)) -> diesel::deserialize::Result<Self> {
+                    use std::convert::TryInto;
+                    diesel::deserialize::Result::Ok(Self {
+                        #(#build_expr,)*
+                    })
+                }
             }
-        }
-    }))
+        },
+    ))
 }

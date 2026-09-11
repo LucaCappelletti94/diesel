@@ -2,10 +2,10 @@
 source: diesel_derives/src/tests/mod.rs
 expression: out
 info:
-  input: "#[derive(DieselNumericOps)]\nstruct NumericColumn;\n"
+  input: "#[derive(DieselNumericOps)]\n#[diesel(crate = ::my_diesel)]\nstruct NumericColumn;\n"
 ---
 const _: () = {
-    use ::diesel;
+    use ::my_diesel as diesel;
     use diesel::internal::derives::numeric_ops as ops;
     use diesel::expression::{Expression, AsExpression};
     use diesel::sql_types::ops::{Add, Sub, Mul, Div};

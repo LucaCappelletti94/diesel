@@ -5,7 +5,7 @@ use syn::Result;
 use syn::parse_quote;
 
 use crate::model::Model;
-use crate::util::{ty_for_foreign_derive, wrap_in_dummy_mod};
+use crate::util::ty_for_foreign_derive;
 
 pub fn derive(mut item: DeriveInput) -> Result<TokenStream> {
     let model = Model::from_item(&item, true, false)?;
@@ -28,7 +28,9 @@ pub fn derive(mut item: DeriveInput) -> Result<TokenStream> {
         item.generics.params.push(parse_quote!(__GroupByClause));
         let (impl_generics, _, where_clause) = item.generics.split_for_impl();
 
-        Ok(wrap_in_dummy_mod(quote! {
+        let crate_path = model.crate_path();
+
+        Ok(crate_path.wrap_in_dummy_mod(quote! {
             impl #impl_generics diesel::expression::ValidGrouping<__GroupByClause> for #struct_ty
             #where_clause
             {
@@ -61,7 +63,9 @@ pub fn derive(mut item: DeriveInput) -> Result<TokenStream> {
         item.generics.params.push(parse_quote!(__GroupByClause));
         let (impl_generics, _, where_clause) = item.generics.split_for_impl();
 
-        Ok(wrap_in_dummy_mod(quote! {
+        let crate_path = model.crate_path();
+
+        Ok(crate_path.wrap_in_dummy_mod(quote! {
 
             impl #impl_generics diesel::expression::ValidGrouping<__GroupByClause> for #struct_ty
             #where_clause

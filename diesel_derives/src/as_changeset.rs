@@ -8,7 +8,7 @@ use syn::{DeriveInput, Expr, Path, Result, Type, parse_quote};
 
 use crate::field::Field;
 use crate::model::Model;
-use crate::util::{inner_of_option_ty, is_option_ty, wrap_in_dummy_mod};
+use crate::util::{inner_of_option_ty, is_option_ty};
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
     let model = Model::from_item(&item, false, false)?;
@@ -237,7 +237,9 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         quote! {}
     };
 
-    Ok(wrap_in_dummy_mod(quote!(
+    let crate_path = model.crate_path();
+
+    Ok(crate_path.wrap_in_dummy_mod(quote!(
         #changeset_owned
 
         #changeset_borrowed

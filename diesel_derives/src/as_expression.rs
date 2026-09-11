@@ -5,10 +5,10 @@ use syn::Result;
 use syn::parse_quote;
 
 use crate::model::Model;
-use crate::util::{ty_for_foreign_derive, wrap_in_dummy_mod};
+use crate::util::ty_for_foreign_derive;
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
-    let model = Model::from_item(&item, true, false)?;
+    let mut model = Model::from_item(&item, true, false)?;
     if model.sql_types.is_empty() {
         return Err(syn::Error::new(
             proc_macro2::Span::mixed_site(),
@@ -18,7 +18,7 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
 
     let struct_ty = ty_for_foreign_derive(&item, &model)?;
 
-    let sql_types = model.sql_types;
+    let sql_types = std::mem::take(&mut model.sql_types);
 
     let tokens = derive_inner(
         sql_types,
@@ -28,7 +28,9 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         model.not_sized,
     )?;
 
-    Ok(wrap_in_dummy_mod(tokens))
+    let crate_path = model.crate_path();
+
+    Ok(crate_path.wrap_in_dummy_mod(tokens))
 }
 
 pub fn derive_inner(

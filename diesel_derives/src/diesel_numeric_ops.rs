@@ -1,11 +1,20 @@
+use diesel_attribute_parser::{StructAttr, parse_attributes};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
+use syn::Result;
 use syn::parse_quote;
 
-use crate::util::wrap_in_dummy_mod;
+use crate::util::CratePath;
 
-pub fn derive(mut item: DeriveInput) -> TokenStream {
+pub fn derive(mut item: DeriveInput) -> Result<TokenStream> {
+    let crate_path = parse_attributes(&item.attrs)?
+        .into_iter()
+        .find_map(|attr| match attr.item {
+            StructAttr::CratePath(_, path) => Some(path),
+            _ => None,
+        });
+
     let struct_name = &item.ident;
 
     {
@@ -22,7 +31,8 @@ pub fn derive(mut item: DeriveInput) -> TokenStream {
     impl_generics.params.push(parse_quote!(__Rhs));
     let (impl_generics, _, _) = impl_generics.split_for_impl();
 
-    wrap_in_dummy_mod(quote! {
+    let crate_path = CratePath::new(crate_path.as_ref());
+    Ok(crate_path.wrap_in_dummy_mod(quote! {
         use diesel::internal::derives::numeric_ops as ops;
         use diesel::expression::{Expression, AsExpression};
         use diesel::sql_types::ops::{Add, Sub, Mul, Div};
@@ -83,5 +93,5 @@ pub fn derive(mut item: DeriveInput) -> TokenStream {
                 ops::Div::new(self, rhs.as_expression())
             }
         }
-    })
+    }))
 }

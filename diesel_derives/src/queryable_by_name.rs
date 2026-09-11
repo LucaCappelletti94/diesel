@@ -7,7 +7,6 @@ use syn::{DeriveInput, Ident, LitStr, Result, Type, parse_quote, parse_quote_spa
 
 use crate::field::{Field, FieldName};
 use crate::model::Model;
-use crate::util::wrap_in_dummy_mod;
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
     let model = Model::from_item(&item, false, false)?;
@@ -96,25 +95,28 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         }
     });
 
-    Ok(wrap_in_dummy_mod(quote! {
+    let crate_path = model.crate_path();
 
-        impl #impl_generics diesel::deserialize::QueryableByName<__DB>
-            for #struct_name #ty_generics
-        #where_clause
-        {
-            fn build<'__a>(row: &impl diesel::row::NamedRow<'__a, __DB>) -> diesel::deserialize::Result<Self>
+    Ok(crate_path.wrap_in_dummy_mod(quote! {
+
+            impl #impl_generics diesel::deserialize::QueryableByName<__DB>
+                for #struct_name #ty_generics
+            #where_clause
             {
-                #(
-                    let mut #fields = #initial_field_expr;
-                )*
-                diesel::deserialize::Result::Ok(Self {
-                    #(#field_constructor,)*
-                })
+                fn build<'__a>(row: &impl diesel::row::NamedRow<'__a, __DB>) -> diesel::deserialize::Result<Self>
+                {
+                    #(
+                        let mut #fields = #initial_field_expr;
+                    )*
+                    diesel::deserialize::Result::Ok(Self {
+                        #(#field_constructor,)*
+                    })
+                }
             }
-        }
 
-        #check_function
-    }))
+            #check_function
+        },
+    ))
 }
 
 fn get_ident(field: &Field) -> Ident {

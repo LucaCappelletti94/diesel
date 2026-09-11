@@ -116,6 +116,7 @@ mod valid_grouping;
 ///   `treat_none_as_null` attribute for the current field.
 /// * `#[diesel(skip_update)]`, skips updating this field. Useful for working with
 ///   generated columns.
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/as_changeset.md")))]
 #[cfg_attr(
     all(not(feature = "without-deprecated"), feature = "with-deprecated"),
@@ -182,6 +183,7 @@ fn derive_as_changeset_inner(input: proc_macro2::TokenStream) -> proc_macro2::To
 ///   that the type is `Sized`
 /// * `#[diesel(enum_type)]`, to indicate that the type represents a SQL side enum
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/as_expression.md")))]
 #[cfg_attr(
     all(not(feature = "without-deprecated"), feature = "with-deprecated"),
@@ -236,6 +238,7 @@ fn derive_as_expression_inner(input: proc_macro2::TokenStream) -> proc_macro2::T
 ///   field maps to `some_column_name`. By default, the field name is used
 ///   as a column name.
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/associations.md")))]
 #[cfg_attr(
     all(not(feature = "without-deprecated"), feature = "with-deprecated"),
@@ -256,14 +259,15 @@ fn derive_associations_inner(input: proc_macro2::TokenStream) -> proc_macro2::To
 }
 
 /// Implement numeric operators for the current query node
-#[proc_macro_derive(DieselNumericOps)]
+#[doc = include_str!("doc/crate_path.md")]
+#[proc_macro_derive(DieselNumericOps, attributes(diesel))]
 pub fn derive_diesel_numeric_ops(input: TokenStream) -> TokenStream {
     derive_diesel_numeric_ops_inner(input.into()).into()
 }
 
 fn derive_diesel_numeric_ops_inner(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     syn::parse2(input)
-        .map(diesel_numeric_ops::derive)
+        .and_then(diesel_numeric_ops::derive)
         .unwrap_or_else(syn::Error::into_compile_error)
 }
 
@@ -274,6 +278,7 @@ fn derive_diesel_numeric_ops_inner(input: proc_macro2::TokenStream) -> proc_macr
 ///
 /// There are no options or special considerations needed for this derive.
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/from_sql_row.md")))]
 #[proc_macro_derive(FromSqlRow, attributes(diesel))]
 pub fn derive_from_sql_row(input: TokenStream) -> TokenStream {
@@ -323,6 +328,7 @@ fn derive_from_sql_row_inner(input: proc_macro2::TokenStream) -> proc_macro2::To
 ///   field maps to `some_column_name`. By default, the field name is used
 ///   as a column name.
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/identifiable.md")))]
 #[cfg_attr(
     all(not(feature = "without-deprecated"), feature = "with-deprecated"),
@@ -469,6 +475,7 @@ fn derive_identifiable_inner(input: proc_macro2::TokenStream) -> proc_macro2::To
 /// # }
 /// ```
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/insertable.md")))]
 #[cfg_attr(
     all(not(feature = "without-deprecated"), feature = "with-deprecated"),
@@ -523,6 +530,7 @@ fn derive_insertable_inner(input: proc_macro2::TokenStream) -> proc_macro2::Toke
 /// you shouldn't derive this trait.
 /// In that case, you should implement it manually instead.
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/query_id.md")))]
 #[proc_macro_derive(QueryId, attributes(diesel))]
 pub fn derive_query_id(input: TokenStream) -> TokenStream {
@@ -531,7 +539,7 @@ pub fn derive_query_id(input: TokenStream) -> TokenStream {
 
 fn derive_query_id_inner(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     syn::parse2(input)
-        .map(query_id::derive)
+        .and_then(query_id::derive)
         .unwrap_or_else(syn::Error::into_compile_error)
 }
 
@@ -715,6 +723,7 @@ fn derive_query_id_inner(input: proc_macro2::TokenStream) -> proc_macro2::TokenS
 /// # }
 /// ```
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/queryable.md")))]
 #[cfg_attr(
     all(not(feature = "without-deprecated"), feature = "with-deprecated"),
@@ -928,6 +937,7 @@ fn derive_queryable_inner(input: proc_macro2::TokenStream) -> proc_macro2::Token
 /// # }
 /// ```
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/queryable_by_name.md")))]
 #[cfg_attr(
     all(not(feature = "without-deprecated"), feature = "with-deprecated"),
@@ -1007,6 +1017,7 @@ fn derive_queryable_by_name_inner(input: proc_macro2::TokenStream) -> proc_macro
 ///   Example use (this would actually be inferred):
 ///   `#[diesel(select_expression_type = dsl::IsNotNull<my_table::some_field>)]`
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/selectable.md")))]
 #[proc_macro_derive(Selectable, attributes(diesel))]
 pub fn derive_selectable(input: TokenStream) -> TokenStream {
@@ -1063,6 +1074,7 @@ fn derive_selectable_inner(input: proc_macro2::TokenStream) -> proc_macro2::Toke
 ///   with the given name. `TypeName` needs to be one of the possible values
 ///   in `MariadbType`
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/sql_type.md")))]
 #[cfg_attr(
     all(not(feature = "without-deprecated"), feature = "with-deprecated"),
@@ -1125,6 +1137,7 @@ fn derive_sql_type_inner(input: proc_macro2::TokenStream) -> proc_macro2::TokenS
 /// * `#[diesel(aggregate)]` for cases where the type represents an aggregating
 ///   SQL expression
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/valid_grouping.md")))]
 #[proc_macro_derive(ValidGrouping, attributes(diesel))]
 pub fn derive_valid_grouping(input: TokenStream) -> TokenStream {
@@ -2878,6 +2891,7 @@ fn declare_sql_function_inner(
 /// # }
 /// ```
 ///
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/has_query.md")))]
 #[proc_macro_derive(HasQuery, attributes(diesel))]
 pub fn derive_has_query(input: TokenStream) -> TokenStream {
@@ -3004,6 +3018,7 @@ fn derive_has_query_inner(input: proc_macro2::TokenStream) -> proc_macro2::Token
 /// Ok(())
 /// # }
 /// ```
+#[doc = include_str!("doc/crate_path.md")]
 #[cfg_attr(diesel_docsrs, doc = include_str!(concat!(env!("OUT_DIR"), "/enum.md")))]
 #[proc_macro_derive(Enum, attributes(diesel))]
 pub fn derive_enum(input: TokenStream) -> TokenStream {

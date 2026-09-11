@@ -1,23 +1,40 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::Result;
-use syn::{Data, DeriveInput, GenericArgument, Type, parse_quote};
+use syn::{Data, DeriveInput, GenericArgument, Path, Type, parse_quote};
 
 use crate::model::Model;
 
-pub fn wrap_in_dummy_mod(item: TokenStream) -> TokenStream {
-    quote! {
-        const _: () = {
-            // This import is not actually redundant. When using diesel_derives
-            // inside of diesel, `diesel` doesn't exist as an extern crate, and
-            // to work around that it contains a private
-            // `mod diesel { pub use super::*; }` that this import will then
-            // refer to. In all other cases, this imports refers to the extern
-            // crate diesel.
-            use diesel;
+/// The path the generated code reaches diesel by.
+///
+/// The default is `::diesel`, which resolves through the extern prelude and is
+/// therefore undisturbed by a module or item named `diesel` in the caller's
+/// scope. Inside diesel itself it resolves through `extern crate self as
+/// diesel`. `#[diesel(crate = ...)]` replaces it, which is how a
+/// `macro_rules!` hands on the path it reached diesel by.
+#[derive(Default, Clone, Copy)]
+pub struct CratePath<'a>(Option<&'a Path>);
 
-            #item
+impl<'a> CratePath<'a> {
+    pub fn new(path: Option<&'a Path>) -> Self {
+        Self(path)
+    }
+
+    pub fn wrap_in_dummy_mod(self, item: TokenStream) -> TokenStream {
+        let import = match self.0 {
+            Some(path) => quote!(use #path as diesel;),
+            None => quote!(
+                use ::diesel;
+            ),
         };
+
+        quote! {
+            const _: () = {
+                #import
+
+                #item
+            };
+        }
     }
 }
 

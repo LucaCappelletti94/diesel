@@ -25,6 +25,7 @@ pub enum CheckForBackend {
 }
 
 mod notes {
+    pub const CRATE_NOTE: &str = "crate = ::diesel";
     pub const COLUMN_NAME_NOTE: &str = "column_name = foo";
     pub const SQL_TYPE_NOTE: &str = "sql_type = Foo";
     pub const SERIALIZE_AS_NOTE: &str = "serialize_as = Foo";
@@ -256,6 +257,7 @@ pub enum StructAttr {
     NotSized(Ident),
     ForeignDerive(Ident),
     EnumType(Ident),
+    CratePath(Ident, Path),
 
     TableName(Ident, Path),
     SqlType(Ident, TypePath),
@@ -272,10 +274,20 @@ pub enum StructAttr {
     BaseQuery(Ident, Expr),
     BaseQueryType(Ident, Type),
     RenameAll(Ident, RenameVariants),
+
+    /// Set by diesel itself on the `OverClause` struct, not part of the public attribute surface.
+    InternalIsWindow(Ident, LitBool),
 }
 
 impl Parse for StructAttr {
     fn parse(input: ParseStream) -> Result<Self> {
+        if input.peek(Token![crate]) {
+            let name = input.parse::<Token![crate]>()?;
+            // `crate` is a keyword, so it cannot be parsed as an `Ident` above
+            let name = Ident::new("crate", name.span);
+            return Ok(StructAttr::CratePath(name, parse_eq(input, CRATE_NOTE)?));
+        }
+
         let name: Ident = input.parse()?;
         let name_str = name.to_string();
 
@@ -284,6 +296,10 @@ impl Parse for StructAttr {
             "not_sized" => Ok(StructAttr::NotSized(name)),
             "foreign_derive" => Ok(StructAttr::ForeignDerive(name)),
             "enum_type" => Ok(StructAttr::EnumType(name)),
+            "diesel_internal_is_window" => Ok(StructAttr::InternalIsWindow(
+                name,
+                parse_eq(input, "diesel_internal_is_window = true")?,
+            )),
 
             "table_name" => Ok(StructAttr::TableName(
                 name,
@@ -352,6 +368,7 @@ impl Parse for StructAttr {
             _ => Err(unknown_attribute(
                 &name,
                 &[
+                    "crate",
                     "aggregate",
                     "not_sized",
                     "foreign_derive",
@@ -383,6 +400,7 @@ impl MySpanned for StructAttr {
             | StructAttr::NotSized(ident)
             | StructAttr::ForeignDerive(ident)
             | StructAttr::EnumType(ident)
+            | StructAttr::CratePath(ident, _)
             | StructAttr::TableName(ident, _)
             | StructAttr::SqlType(ident, _)
             | StructAttr::TreatNoneAsDefaultValue(ident, _)
@@ -396,7 +414,8 @@ impl MySpanned for StructAttr {
             | StructAttr::BaseQuery(ident, _)
             | StructAttr::BaseQueryType(ident, _)
             | StructAttr::PrimaryKey(ident, _)
-            | StructAttr::RenameAll(ident, _) => ident.span(),
+            | StructAttr::RenameAll(ident, _)
+            | StructAttr::InternalIsWindow(ident, _) => ident.span(),
         }
     }
 }

@@ -10,7 +10,7 @@ use syn::{Lifetime, parse_quote};
 
 use crate::field::Field;
 use crate::model::Model;
-use crate::util::{inner_of_option_ty, is_option_ty, wrap_in_dummy_mod};
+use crate::util::{inner_of_option_ty, is_option_ty};
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
     let model = Model::from_item(&item, false, true)?;
@@ -21,7 +21,9 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         .map(|table_name| derive_into_single_table(&item, &model, table_name))
         .collect::<Result<Vec<_>>>()?;
 
-    Ok(wrap_in_dummy_mod(quote! {
+    let crate_path = model.crate_path();
+
+    Ok(crate_path.wrap_in_dummy_mod(quote! {
         #(#tokens)*
     }))
 }

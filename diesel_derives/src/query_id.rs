@@ -1,41 +1,29 @@
+use diesel_attribute_parser::{StructAttr, parse_attributes};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
+use syn::Result;
 use syn::parse_quote;
 
-use crate::util::wrap_in_dummy_mod;
+use crate::util::CratePath;
 
-pub fn derive(mut item: DeriveInput) -> TokenStream {
+pub fn derive(mut item: DeriveInput) -> Result<TokenStream> {
+    let mut crate_path = None;
+    let mut is_window_function = false;
+    for attr in parse_attributes(&item.attrs)? {
+        match attr.item {
+            StructAttr::CratePath(_, path) => crate_path = Some(path),
+            StructAttr::InternalIsWindow(_, value) => is_window_function = value.value(),
+            _ => {}
+        }
+    }
+
     for ty_param in item.generics.type_params_mut() {
         ty_param
             .bounds
             .push(parse_quote!(diesel::query_builder::QueryId));
     }
     let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-    let is_window_function = item.attrs.iter().any(|a| {
-        if a.path().is_ident("diesel") {
-            match a.parse_args_with(
-                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
-            ) {
-                Ok(nested) => nested.iter().any(|n| match n {
-                    syn::Meta::NameValue(n) => {
-                        n.path.is_ident("diesel_internal_is_window")
-                            && matches!(
-                                n.value,
-                                syn::Expr::Lit(syn::ExprLit {
-                                    lit: syn::Lit::Bool(syn::LitBool { value: true, .. }),
-                                    ..
-                                })
-                            )
-                    }
-                    _ => false,
-                }),
-                _ => false,
-            }
-        } else {
-            false
-        }
-    });
 
     let struct_name = &item.ident;
     // Arguments must follow the declaration order of the parameters, so walk them in
@@ -71,7 +59,8 @@ pub fn derive(mut item: DeriveInput) -> TokenStream {
         quote! { #(#is_window_function_list ||)* false }
     };
 
-    wrap_in_dummy_mod(quote! {
+    let crate_path = CratePath::new(crate_path.as_ref());
+    Ok(crate_path.wrap_in_dummy_mod(quote! {
         #[allow(non_camel_case_types)]
         impl #impl_generics diesel::query_builder::QueryId for #struct_name #ty_generics
         #where_clause
@@ -82,5 +71,5 @@ pub fn derive(mut item: DeriveInput) -> TokenStream {
 
             const IS_WINDOW_FUNCTION: bool = #is_window_function;
         }
-    })
+    }))
 }

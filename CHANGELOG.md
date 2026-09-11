@@ -54,6 +54,7 @@ Increasing the minimal supported Rust version will always be coupled at least wi
 * Added support for `RETURNING` to  Mariadb (`UPDATE ... RETURNING` requires Mariadb >= 13)
 * Added support for `VALUES(column)` in Upsert for Mysql and Mariadb
 * Added the `UnsignedTiny`, `UnsignedSmall`, `UnsignedMedium` and `UnsignedBig` variants to `NumericRepresentation` for the MySQL and MariaDB backends
+* Added a `#[diesel(crate = path::to::diesel)]` attribute to the derive macros, naming the path their output reaches diesel by. A `macro_rules!` macro that generates diesel items passes on `$crate::...`, so its expansion also compiles in a crate that renames the diesel dependency or does not depend on diesel directly.
 
 ### Fixed
 
@@ -68,6 +69,7 @@ Increasing the minimal supported Rust version will always be coupled at least wi
 * `diesel print-schema` now generates `joinable!` and `allow_tables_to_appear_in_same_query!` for PostgreSQL foreign keys across multiple configured schemas
 * Fixed several Tests using schema modifications for `mysql` and `mariadb`
 * Fixed an overflow while converting a PostgreSQL `Interval` into a `chrono::Duration`, which panicked with debug assertions enabled and silently produced a wrong, sometimes negative, duration without them
+* Derive macro output now reaches diesel through `::diesel` instead of `diesel`, matching what `table!` already did, so it compiles in a module where the name `diesel` resolves to something else.
 
 ### Changed
 

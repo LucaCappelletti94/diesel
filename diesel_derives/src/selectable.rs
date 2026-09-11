@@ -6,7 +6,6 @@ use syn::{DeriveInput, Ident, Result, parse_quote};
 
 use crate::field::Field;
 use crate::model::Model;
-use crate::util::wrap_in_dummy_mod;
 use diesel_attribute_parser::CheckForBackend;
 
 type DefaultCheckCallback = fn(
@@ -85,7 +84,9 @@ pub fn derive(
         .map(|e| e.into_compile_error())
         .collect();
 
-    Ok(wrap_in_dummy_mod(quote! {
+    let crate_path = model.crate_path();
+
+    Ok(crate_path.wrap_in_dummy_mod(quote! {
         use diesel::expression::Selectable;
 
         impl #impl_generics Selectable<__DB>

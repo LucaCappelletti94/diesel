@@ -7,7 +7,6 @@ use syn::parse_quote;
 
 use crate::field::Field;
 use crate::model::Model;
-use crate::util::wrap_in_dummy_mod;
 
 pub fn derive(item: DeriveInput) -> Result<TokenStream> {
     let model = Model::from_item(&item, false, false)?;
@@ -38,35 +37,38 @@ pub fn derive(item: DeriveInput) -> Result<TokenStream> {
         }
     }
 
-    Ok(wrap_in_dummy_mod(quote! {
-        impl #impl_generics diesel::associations::HasTable for #struct_name #ty_generics
-        #where_clause
-        {
-            type Table = #table_name::table;
+    let crate_path = model.crate_path();
 
-            fn table() -> <Self as diesel::associations::HasTable>::Table {
-                #table_name::table
-            }
-        }
-
-        impl #ref_generics diesel::associations::Identifiable for &'ident #struct_name #ty_generics
-        #where_clause
-        {
-            type Id = (#(#field_ty),*);
-
-            fn id(self) -> <Self as diesel::associations::Identifiable>::Id {
-                (#(#field_name),*)
-            }
-        }
-
-        impl #ref_generics diesel::associations::Identifiable for &'_ &'ident #struct_name #ty_generics
+    Ok(crate_path.wrap_in_dummy_mod(quote! {
+            impl #impl_generics diesel::associations::HasTable for #struct_name #ty_generics
             #where_clause
-        {
-            type Id = (#(#field_ty),*);
+            {
+                type Table = #table_name::table;
 
-            fn id(self) -> <Self as diesel::associations::Identifiable>::Id {
-                (#(#field_name),*)
+                fn table() -> <Self as diesel::associations::HasTable>::Table {
+                    #table_name::table
+                }
             }
-        }
-    }))
+
+            impl #ref_generics diesel::associations::Identifiable for &'ident #struct_name #ty_generics
+            #where_clause
+            {
+                type Id = (#(#field_ty),*);
+
+                fn id(self) -> <Self as diesel::associations::Identifiable>::Id {
+                    (#(#field_name),*)
+                }
+            }
+
+            impl #ref_generics diesel::associations::Identifiable for &'_ &'ident #struct_name #ty_generics
+                #where_clause
+            {
+                type Id = (#(#field_ty),*);
+
+                fn id(self) -> <Self as diesel::associations::Identifiable>::Id {
+                    (#(#field_name),*)
+                }
+            }
+        },
+    ))
 }

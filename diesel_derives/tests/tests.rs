@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate cfg_if;
 #[macro_use]
-extern crate diesel;
+pub extern crate diesel;
 
 mod helpers;
 mod schema;
@@ -10,6 +10,7 @@ mod as_changeset;
 mod as_expression;
 mod associations;
 mod auto_type;
+mod crate_path;
 #[cfg(any(feature = "postgres", feature = "mysql", feature = "mariadb"))]
 mod enum_;
 mod identifiable;

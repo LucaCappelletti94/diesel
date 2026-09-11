@@ -42,6 +42,26 @@ pub(crate) fn enum_2() {
 }
 
 #[test]
+pub(crate) fn enum_crate_path() {
+    let input = quote::quote! {
+        #[derive(Debug, diesel::Enum)]
+        #[diesel(crate = ::my_diesel, sql_type = ::my_diesel::sql_types::Integer)]
+        enum Color {
+            Red,
+            Green,
+            Blue
+        }
+    };
+
+    expand_with(
+        &crate::derive_enum_inner as &dyn Fn(_) -> _,
+        input,
+        derive(syn::parse_quote!(#[derive(Enum)])),
+        "enum_crate_path",
+    );
+}
+
+#[test]
 fn rename_all() {
     let input = quote::quote! {
         #[derive(Debug, diesel::Enum)]

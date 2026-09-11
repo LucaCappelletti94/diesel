@@ -2,13 +2,13 @@
 source: diesel_derives/src/tests/mod.rs
 expression: out
 info:
-  input: "#[derive(QueryId)]\nstruct Query<'a> {\n    f: &'a str,\n}\n"
+  input: "#[derive(QueryId)]\n#[diesel(crate = ::my_diesel)]\nstruct Query;\n"
 ---
 const _: () = {
-    use ::diesel;
+    use ::my_diesel as diesel;
     #[allow(non_camel_case_types)]
-    impl<'a> diesel::query_builder::QueryId for Query<'a> {
-        type QueryId = Query<'static>;
+    impl diesel::query_builder::QueryId for Query {
+        type QueryId = Query;
         const HAS_STATIC_QUERY_ID: bool = true;
         const IS_WINDOW_FUNCTION: bool = false;
     }

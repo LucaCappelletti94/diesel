@@ -2,7 +2,7 @@ use diesel_attribute_parser::AttributeSpanWrapper;
 use proc_macro2::{Span, TokenStream};
 use syn::{Data, Ident, Result, spanned::Spanned};
 
-use crate::util::wrap_in_dummy_mod;
+use crate::util::CratePath;
 
 const ERROR_MESSAGE: &str = "this derive can only be used on enums with exclusively unit-variants";
 
@@ -93,7 +93,8 @@ pub fn derive(item: DeriveEnumInput) -> Result<TokenStream> {
     )?;
     let from_sql_row_impl = super::from_sql_row::derive_inner(struct_ty, syn::Generics::default())?;
 
-    Ok(wrap_in_dummy_mod(quote::quote! {
+    let crate_path = CratePath::new(item.crate_path.as_ref());
+    Ok(crate_path.wrap_in_dummy_mod(quote::quote! {
         #(#from_sql_impls)*
         #(#to_sql_impls)*
 
@@ -104,6 +105,7 @@ pub fn derive(item: DeriveEnumInput) -> Result<TokenStream> {
 
 pub struct DeriveEnumInput {
     sql_type_attrs: Vec<AttributeSpanWrapper<syn::TypePath>>,
+    crate_path: Option<syn::Path>,
     ident: syn::Ident,
     has_explicit_discriminants: bool,
     variants: Vec<EnumVariant>,
@@ -225,22 +227,26 @@ impl syn::parse::Parse for DeriveEnumInput {
             });
         }
 
-        let sql_type_attrs = attrs
-            .into_iter()
-            .filter_map(
-                |a: AttributeSpanWrapper<diesel_attribute_parser::StructAttr>| {
-                    if let diesel_attribute_parser::StructAttr::SqlType(_, path) = a.item {
-                        Some(diesel_attribute_parser::AttributeSpanWrapper {
-                            item: path,
-                            attribute_span: a.attribute_span,
-                            ident_span: a.ident_span,
-                        })
-                    } else {
-                        None
-                    }
-                },
-            )
-            .collect::<Vec<_>>();
+        let mut crate_path = None;
+        let mut sql_type_attrs = Vec::new();
+        for attr in attrs {
+            let AttributeSpanWrapper {
+                item,
+                attribute_span,
+                ident_span,
+            } = attr;
+            match item {
+                diesel_attribute_parser::StructAttr::CratePath(_, path) => crate_path = Some(path),
+                diesel_attribute_parser::StructAttr::SqlType(_, path) => {
+                    sql_type_attrs.push(AttributeSpanWrapper {
+                        item: path,
+                        attribute_span,
+                        ident_span,
+                    })
+                }
+                _ => {}
+            }
+        }
         if sql_type_attrs.is_empty() {
             return Err(syn::Error::new(
                 input_span,
@@ -250,6 +256,7 @@ impl syn::parse::Parse for DeriveEnumInput {
 
         Ok(Self {
             sql_type_attrs,
+            crate_path,
             ident: input.ident,
             has_explicit_discriminants,
             variants,

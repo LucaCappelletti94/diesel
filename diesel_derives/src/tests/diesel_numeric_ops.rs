@@ -15,3 +15,18 @@ pub(crate) fn diesel_numeric_ops_1() {
         "diesel_numeric_ops_1",
     );
 }
+
+#[test]
+pub(crate) fn diesel_numeric_ops_crate_path() {
+    let input = quote::quote! {
+        #[diesel(crate = ::my_diesel)]
+        struct NumericColumn;
+    };
+
+    expand_with(
+        &crate::derive_diesel_numeric_ops_inner as &dyn Fn(_) -> _,
+        input,
+        derive(syn::parse_quote!(#[derive(DieselNumericOps)])),
+        "diesel_numeric_ops_crate_path",
+    );
+}
