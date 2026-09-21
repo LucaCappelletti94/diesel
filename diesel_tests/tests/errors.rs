@@ -138,6 +138,42 @@ fn sqlstate_reports_the_code_of_an_unmapped_error() {
 }
 
 #[diesel_test_helper::test]
+#[cfg(any(feature = "mysql", feature = "mariadb"))]
+fn sqlstate_reports_the_code_of_a_mapped_error_on_mysql_like() {
+    let connection = &mut connection();
+
+    insert_into(users::table)
+        .values(&User::new(1, "Sean"))
+        .execute(connection)
+        .unwrap();
+    let failure = insert_into(users::table)
+        .values(&User::new(1, "Jim"))
+        .execute(connection);
+
+    match failure {
+        // both servers report class 23000 for the duplicate key error 1062
+        Err(DatabaseError(UniqueViolation, e)) => assert_eq!(Some("23000"), e.sqlstate()),
+        other => panic!("{other:?} did not match Err(DatabaseError(UniqueViolation, e))"),
+    }
+}
+
+#[diesel_test_helper::test]
+#[cfg(any(feature = "mysql", feature = "mariadb"))]
+fn sqlstate_reports_the_code_of_an_unmapped_error_on_mysql_like() {
+    use diesel::result::DatabaseErrorKind::Unknown;
+
+    let connection = &mut connection();
+
+    // the query DSL cannot emit invalid SQL, so this statement is written raw
+    let failure = diesel::sql_query("SELECT id FROM users WHERE").execute(connection);
+
+    match failure {
+        Err(DatabaseError(Unknown, e)) => assert_eq!(Some("42000"), e.sqlstate()),
+        other => panic!("{other:?} did not match Err(DatabaseError(Unknown, e))"),
+    }
+}
+
+#[diesel_test_helper::test]
 #[cfg(feature = "postgres")]
 // This is a false positive as there is a side effect of this collect (spawning threads)
 #[allow(clippy::needless_collect)]

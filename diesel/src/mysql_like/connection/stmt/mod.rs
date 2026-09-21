@@ -6,6 +6,7 @@ use core::ptr::NonNull;
 use mysqlclient_sys as ffi;
 
 use super::bind::{OutputBinds, PreparedStatementBinds};
+use super::error_information::{MysqlLikeErrorInformation, sqlstate_from_ptr};
 use crate::connection::statement_cache::MaybeCached;
 use crate::mysql_like::{MysqlLikeBackend, MysqlType};
 use crate::result::{DatabaseErrorKind, Error, QueryResult};
@@ -76,6 +77,12 @@ impl<DB: MysqlLikeBackend> Statement<DB> {
             .into_owned()
     }
 
+    fn last_error_sqlstate(&self) -> Option<String> {
+        // SAFETY: `self.stmt` is a live handle, so the returned pointer is null
+        // or owned by it.
+        sqlstate_from_ptr(unsafe { ffi::mysql_stmt_sqlstate(self.stmt.as_ptr()) })
+    }
+
     ///we return a Option here because mariadb sometimes doesn't provide the statement metadata before the execute
     pub(super) fn metadata(&self) -> QueryResult<Option<StatementMetadata>> {
         let result_ptr = unsafe { ffi::mysql_stmt_result_metadata(self.stmt.as_ptr()) };
@@ -92,7 +99,10 @@ impl<DB: MysqlLikeBackend> Statement<DB> {
         } else {
             Err(DatabaseError(
                 self.last_error_type(),
-                Box::new(error_message),
+                Box::new(MysqlLikeErrorInformation {
+                    message: error_message,
+                    sqlstate: self.last_error_sqlstate(),
+                }),
             ))
         }
     }

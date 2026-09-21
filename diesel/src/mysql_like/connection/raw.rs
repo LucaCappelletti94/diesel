@@ -5,6 +5,7 @@ use core::ptr::{self, NonNull};
 use mysqlclient_sys as ffi;
 use std::sync::Once;
 
+use super::error_information::{MysqlLikeErrorInformation, sqlstate_from_ptr};
 use super::statement_cache::PrepareForCache;
 use super::stmt::Statement;
 use super::url::ConnectionOptions;
@@ -118,6 +119,12 @@ impl RawConnection {
             .into_owned()
     }
 
+    fn last_error_sqlstate(&self) -> Option<String> {
+        // SAFETY: `self.0` is a live handle, so the returned pointer is null or
+        // owned by it.
+        sqlstate_from_ptr(unsafe { ffi::mysql_sqlstate(self.0.as_ptr()) })
+    }
+
     pub(super) fn execute(&self, query: &str) -> QueryResult<()> {
         unsafe {
             // Make sure you don't use the fake one!
@@ -183,7 +190,10 @@ impl RawConnection {
         } else {
             Err(DatabaseError(
                 DatabaseErrorKind::Unknown,
-                Box::new(error_message),
+                Box::new(MysqlLikeErrorInformation {
+                    message: error_message,
+                    sqlstate: self.last_error_sqlstate(),
+                }),
             ))
         }
     }
