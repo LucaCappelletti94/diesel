@@ -1,12 +1,18 @@
 //! The expression trees the fuzzer draws, one enum per sql type.
+//!
+//! Every `Postgres` variant and the types only it reaches exist for postgres alone. A query
+//! draws them only when its `postgres` flag is set, and sqlite never sees such a query.
 
 use arbitrary::{Arbitrary, Unstructured};
+use chrono::{DateTime, NaiveDateTime, Utc};
+use ipnetwork::IpNetwork;
 use serde_json::Value;
+use std::collections::Bound;
 
 /// Deepest operator nesting a generated tree reaches.
 pub const MAX_DEPTH: usize = 8;
 
-/// Longest `IN` list a generated tree holds.
+/// Longest list a generated value holds, be it an `IN` list, an array or a json path.
 const MAX_LIST: usize = 4;
 
 #[derive(Arbitrary, Debug, Clone, Copy)]
@@ -40,6 +46,14 @@ pub enum Comparison {
     GtEq,
 }
 
+/// Postgres renders each as its own operator, sqlite only knows `LIKE`.
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum Matcher {
+    Like,
+    ILike,
+    SimilarTo,
+}
+
 #[derive(Debug)]
 pub enum Int {
     Column(IntColumn),
@@ -53,6 +67,7 @@ pub enum Int {
     },
     FromText(Box<Text>),
     Scalar(Box<Subquery>),
+    Postgres(PgInt),
 }
 
 #[derive(Debug)]
@@ -63,6 +78,7 @@ pub enum Text {
     FromInt(Box<Int>),
     FromJson(Box<Json>),
     JsonField(Box<Json>, JsonKey),
+    Postgres(PgText),
 }
 
 #[derive(Debug)]
@@ -71,6 +87,7 @@ pub enum Json {
     Literal(Value),
     Field(Box<Json>, JsonKey),
     FromText(Box<Text>),
+    Postgres(PgJson),
 }
 
 /// The right side of `->` and `->>`, a bound key or index, or an expression producing one.
@@ -119,6 +136,7 @@ pub enum Bool {
         right: Box<Int>,
     },
     Match {
+        matcher: Matcher,
         negated: bool,
         value: Box<Text>,
         pattern: Box<Text>,
@@ -127,6 +145,7 @@ pub enum Bool {
     And(Box<Bool>, Box<Bool>),
     Or(Box<Bool>, Box<Bool>),
     Not(Box<Bool>),
+    Postgres(PgBool),
 }
 
 /// `SELECT select FROM t [WHERE filter] ORDER BY t.id`, nested inside an expression.
@@ -136,17 +155,25 @@ pub struct Subquery {
     pub filter: Option<Bool>,
 }
 
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum Nulls {
+    First,
+    Last,
+}
+
 /// A second sort key after `t.id`, which keeps sqlite's row order fixed.
 #[derive(Debug)]
 pub struct Order {
     pub key: Int,
     pub descending: bool,
+    pub nulls: Option<Nulls>,
 }
 
 /// `SELECT [DISTINCT] int, text, bool FROM t [WHERE filter] ORDER BY t.id [, order]
 /// [LIMIT limit] [OFFSET offset]`
 #[derive(Debug)]
 pub struct Query {
+    pub postgres: bool,
     pub distinct: bool,
     pub int: Int,
     pub text: Text,
@@ -191,6 +218,7 @@ pub enum AggBool {
 /// `SELECT t.g, int, big FROM t [WHERE filter] GROUP BY t.g [HAVING having] ORDER BY t.g`
 #[derive(Debug)]
 pub struct Grouping {
+    pub postgres: bool,
     pub int: AggInt,
     pub big: AggBig,
     pub filter: Option<Bool>,
@@ -204,33 +232,237 @@ pub enum Input {
     Groups(Grouping),
 }
 
-/// How much deeper a draw may still nest.
+#[derive(Debug)]
+pub enum PgInt {
+    FromBool(Box<Bool>),
+    Index(Box<IntArray>, Box<Int>),
+    IndexLiteral(Box<IntArray>, i32),
+}
+
+#[derive(Debug)]
+pub enum PgText {
+    FromBool(Box<Bool>),
+    FromJsonb(Box<Jsonb>),
+    FromNet(Box<Net>),
+    JsonbField(Box<Jsonb>, JsonKey),
+    JsonbPath(Box<Jsonb>, Vec<String>),
+}
+
+#[derive(Debug)]
+pub enum PgJson {
+    FromJsonb(Box<Jsonb>),
+}
+
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum JsonKind {
+    Any,
+    Object,
+    Array,
+    Scalar,
+}
+
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum ArrayOp {
+    Overlaps,
+    Contains,
+    IsContainedBy,
+}
+
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum RangeOp {
+    Contains,
+    IsContainedBy,
+    Overlaps,
+    ExtendsRightTo,
+    ExtendsLeftTo,
+    LesserThan,
+    GreaterThan,
+    Adjacent,
+}
+
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum NetOp {
+    Contains,
+    ContainsOrEq,
+    IsContainedBy,
+    IsContainedByOrEq,
+    Overlaps,
+}
+
+#[derive(Debug)]
+pub enum PgBool {
+    FromInt(Box<Int>),
+    HasKey(Box<Jsonb>, Box<Text>),
+    HasAnyKey(Box<Jsonb>, Vec<String>),
+    HasAllKeys(Box<Jsonb>, Vec<String>),
+    JsonbContains(Box<Jsonb>, Box<Jsonb>),
+    JsonbIsContainedBy(Box<Jsonb>, Box<Jsonb>),
+    IsJson {
+        kind: JsonKind,
+        negated: bool,
+        value: Box<Text>,
+    },
+    Array(ArrayOp, Box<IntArray>, Box<IntArray>),
+    Range(RangeOp, Box<Range>, Box<Range>),
+    RangeHas(Box<Range>, Box<Int>),
+    InRange(Box<Int>, Box<Range>),
+    Net(NetOp, Box<Net>, Box<Net>),
+    NetDistance(Comparison, Box<Net>, Box<Net>, i64),
+    Stamp(Comparison, Box<Stamp>, Box<Stamp>),
+    StampTz(Comparison, Box<StampTz>, Box<StampTz>),
+    BinaryMatch {
+        negated: bool,
+        value: Box<Binary>,
+        pattern: Box<Binary>,
+        escape: Option<char>,
+    },
+}
+
+/// Which ends of `[low:high]` a slice spells out.
+#[derive(Debug)]
+pub enum Bounds<T> {
+    Both(T, T),
+    From(T),
+    To(T),
+}
+
+#[derive(Debug)]
+pub enum IntArray {
+    Column,
+    Literal(Vec<i32>),
+    Concat(Box<IntArray>, Box<IntArray>),
+    Build(Vec<Int>),
+    FromSubquery(Box<Subquery>),
+    Slice(Box<IntArray>, Bounds<Box<Int>>),
+    SliceLiteral(Box<IntArray>, Bounds<i32>),
+}
+
+/// The right side of the jsonb `-` operator.
+#[derive(Debug)]
+pub enum RemoveKey {
+    Name(String),
+    Position(i32),
+    Names(Vec<String>),
+}
+
+#[derive(Debug)]
+pub enum Jsonb {
+    Column,
+    Literal(Value),
+    Concat(Box<Jsonb>, Box<Jsonb>),
+    Remove(Box<Jsonb>, RemoveKey),
+    RemovePath(Box<Jsonb>, Vec<String>),
+    Field(Box<Jsonb>, JsonKey),
+    Path(Box<Jsonb>, Vec<String>),
+    FromText(Box<Text>),
+    FromJson(Box<Json>),
+}
+
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum RangeCombine {
+    Union,
+    Difference,
+    Intersection,
+}
+
+#[derive(Debug)]
+pub enum Range {
+    Column,
+    Literal(Bound<i32>, Bound<i32>),
+    Combine(RangeCombine, Box<Range>, Box<Range>),
+}
+
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum NetMask {
+    And,
+    Or,
+}
+
+#[derive(Debug)]
+pub enum Net {
+    Column,
+    Literal(IpNetwork),
+    Mask(NetMask, Box<Net>, Box<Net>),
+    FromText(Box<Text>),
+}
+
+#[derive(Debug)]
+pub enum Stamp {
+    Column,
+    Literal(NaiveDateTime),
+    /// Mirrors diesel's typing of `AT TIME ZONE`, a `Timestamp` for either input. Postgres
+    /// returns a `timestamptz` for `Zoned::Stamp`, which diesel cannot tell apart from `now`
+    /// (diesel-rs/diesel#1514).
+    AtZone(Box<Zoned>, Box<Text>),
+}
+
+/// What `AT TIME ZONE` reads.
+#[derive(Debug)]
+pub enum Zoned {
+    Stamp(Box<Stamp>),
+    StampTz(Box<StampTz>),
+}
+
+#[derive(Debug)]
+pub enum StampTz {
+    Column,
+    Literal(DateTime<Utc>),
+}
+
+#[derive(Debug)]
+pub enum Binary {
+    Column,
+    Literal(Vec<u8>),
+    Concat(Box<Binary>, Box<Binary>),
+}
+
+/// How much tree a draw may still build, and whether postgres-only nodes may appear in it.
 #[derive(Clone, Copy)]
 struct Budget {
     depth: usize,
+    postgres: bool,
 }
 
 impl Budget {
+    /// Guards every postgres-only node, which a sqlite query must never contain.
+    fn assert_postgres(self) {
+        assert!(
+            self.postgres,
+            "drew a postgres-only node for a sqlite query"
+        );
+    }
+
     fn deeper(self) -> Self {
         Budget {
             depth: self.depth.saturating_sub(1),
+            postgres: self.postgres,
         }
     }
 
-    /// Picks among `leaves` alone once the depth runs out, else among all `variants`.
+    /// Picks among `leaves` alone once the depth runs out, then among `shared` variants, then
+    /// among all `variants` when postgres-only ones may appear.
     fn choose(
         self,
         u: &mut Unstructured<'_>,
         leaves: usize,
+        shared: usize,
         variants: usize,
     ) -> arbitrary::Result<usize> {
-        u.choose_index(if self.depth == 0 { leaves } else { variants })
+        let count = match (self.depth, self.postgres) {
+            (0, _) => leaves,
+            (_, false) => shared,
+            (_, true) => variants,
+        };
+        u.choose_index(count)
     }
 }
 
 impl<'a> Arbitrary<'a> for Input {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        let budget = Budget { depth: MAX_DEPTH };
+        let budget = Budget {
+            depth: MAX_DEPTH,
+            postgres: u.arbitrary()?,
+        };
         Ok(if u.arbitrary()? {
             Input::Groups(Grouping::draw(u, budget)?)
         } else {
@@ -255,6 +487,7 @@ impl Query {
             }
         };
         Ok(Query {
+            postgres: budget.postgres,
             distinct,
             int: Int::draw(u, budget)?,
             text: Text::draw(u, budget)?,
@@ -264,6 +497,11 @@ impl Query {
                 Ok(Order {
                     key: Int::draw(u, budget)?,
                     descending: u.arbitrary()?,
+                    nulls: if budget.postgres {
+                        u.arbitrary()?
+                    } else {
+                        None
+                    },
                 })
             })?,
             limit: page(u)?,
@@ -275,6 +513,7 @@ impl Query {
 impl Grouping {
     fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
         Ok(Grouping {
+            postgres: budget.postgres,
             int: AggInt::draw(u, budget)?,
             big: AggBig::draw(u, budget)?,
             filter: option(u, |u| Bool::draw(u, budget))?,
@@ -361,7 +600,7 @@ fn boxed<T>(value: arbitrary::Result<T>) -> arbitrary::Result<Box<T>> {
 impl Int {
     fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
         let deeper = budget.deeper();
-        Ok(match budget.choose(u, 2, 6)? {
+        Ok(match budget.choose(u, 2, 6, 7)? {
             0 => Int::Column(u.arbitrary()?),
             1 => Int::Literal(u.arbitrary()?),
             2 => Int::Arith(
@@ -378,7 +617,18 @@ impl Int {
                 otherwise: option(u, |u| boxed(Int::draw(u, deeper)))?,
             },
             4 => Int::FromText(boxed(Text::draw(u, deeper))?),
-            _ => Int::Scalar(boxed(Subquery::draw(u, deeper))?),
+            5 => Int::Scalar(boxed(Subquery::draw(u, deeper))?),
+            _ => {
+                budget.assert_postgres();
+                Int::Postgres(match u.choose_index(3)? {
+                    0 => PgInt::FromBool(boxed(Bool::draw(u, deeper))?),
+                    1 => PgInt::Index(
+                        boxed(IntArray::draw(u, deeper))?,
+                        boxed(Int::draw(u, deeper))?,
+                    ),
+                    _ => PgInt::IndexLiteral(boxed(IntArray::draw(u, deeper))?, u.arbitrary()?),
+                })
+            }
         })
     }
 }
@@ -386,13 +636,29 @@ impl Int {
 impl Text {
     fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
         let deeper = budget.deeper();
-        Ok(match budget.choose(u, 2, 6)? {
+        Ok(match budget.choose(u, 2, 6, 7)? {
             0 => Text::Column(u.arbitrary()?),
             1 => Text::Literal(u.arbitrary()?),
             2 => Text::Concat(boxed(Text::draw(u, deeper))?, boxed(Text::draw(u, deeper))?),
             3 => Text::FromInt(boxed(Int::draw(u, deeper))?),
             4 => Text::FromJson(boxed(Json::draw(u, deeper))?),
-            _ => Text::JsonField(boxed(Json::draw(u, deeper))?, JsonKey::draw(u, deeper)?),
+            5 => Text::JsonField(boxed(Json::draw(u, deeper))?, JsonKey::draw(u, deeper)?),
+            _ => {
+                budget.assert_postgres();
+                Text::Postgres(match u.choose_index(5)? {
+                    0 => PgText::FromBool(boxed(Bool::draw(u, deeper))?),
+                    1 => PgText::FromJsonb(boxed(Jsonb::draw(u, deeper))?),
+                    2 => PgText::FromNet(boxed(Net::draw(u, deeper))?),
+                    3 => PgText::JsonbField(
+                        boxed(Jsonb::draw(u, deeper))?,
+                        JsonKey::draw(u, deeper)?,
+                    ),
+                    _ => PgText::JsonbPath(
+                        boxed(Jsonb::draw(u, deeper))?,
+                        list(u, |u| u.arbitrary())?,
+                    ),
+                })
+            }
         })
     }
 }
@@ -400,11 +666,15 @@ impl Text {
 impl Json {
     fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
         let deeper = budget.deeper();
-        Ok(match budget.choose(u, 2, 4)? {
+        Ok(match budget.choose(u, 2, 4, 5)? {
             0 => Json::Column,
             1 => Json::Literal(json_value(u, 2)?),
             2 => Json::Field(boxed(Json::draw(u, deeper))?, JsonKey::draw(u, deeper)?),
-            _ => Json::FromText(boxed(Text::draw(u, deeper))?),
+            3 => Json::FromText(boxed(Text::draw(u, deeper))?),
+            _ => {
+                budget.assert_postgres();
+                Json::Postgres(PgJson::FromJsonb(boxed(Jsonb::draw(u, deeper))?))
+            }
         })
     }
 }
@@ -437,7 +707,7 @@ impl Bool {
         let int = |u: &mut Unstructured<'_>| boxed(Int::draw(u, deeper));
         let text = |u: &mut Unstructured<'_>| boxed(Text::draw(u, deeper));
         let boolean = |u: &mut Unstructured<'_>| boxed(Bool::draw(u, deeper));
-        Ok(match budget.choose(u, 2, 15)? {
+        Ok(match budget.choose(u, 2, 15, 16)? {
             0 => Bool::Column,
             1 => Bool::Literal(u.arbitrary()?),
             2 => Bool::Compare(u.arbitrary()?, int(u)?, int(u)?),
@@ -473,6 +743,7 @@ impl Bool {
                 right: int(u)?,
             },
             11 => Bool::Match {
+                matcher: u.arbitrary()?,
                 negated: u.arbitrary()?,
                 value: text(u)?,
                 pattern: text(u)?,
@@ -480,7 +751,214 @@ impl Bool {
             },
             12 => Bool::And(boolean(u)?, boolean(u)?),
             13 => Bool::Or(boolean(u)?, boolean(u)?),
-            _ => Bool::Not(boolean(u)?),
+            14 => Bool::Not(boolean(u)?),
+            _ => {
+                budget.assert_postgres();
+                Bool::Postgres(PgBool::draw(u, deeper)?)
+            }
+        })
+    }
+}
+
+impl PgBool {
+    fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
+        let int = |u: &mut Unstructured<'_>| boxed(Int::draw(u, budget));
+        let text = |u: &mut Unstructured<'_>| boxed(Text::draw(u, budget));
+        let jsonb = |u: &mut Unstructured<'_>| boxed(Jsonb::draw(u, budget));
+        let array = |u: &mut Unstructured<'_>| boxed(IntArray::draw(u, budget));
+        let range = |u: &mut Unstructured<'_>| boxed(Range::draw(u, budget));
+        let net = |u: &mut Unstructured<'_>| boxed(Net::draw(u, budget));
+        let binary = |u: &mut Unstructured<'_>| boxed(Binary::draw(u, budget));
+        Ok(match u.choose_index(16)? {
+            0 => PgBool::FromInt(int(u)?),
+            1 => PgBool::HasKey(jsonb(u)?, text(u)?),
+            2 => PgBool::HasAnyKey(jsonb(u)?, list(u, |u| u.arbitrary())?),
+            3 => PgBool::HasAllKeys(jsonb(u)?, list(u, |u| u.arbitrary())?),
+            4 => PgBool::JsonbContains(jsonb(u)?, jsonb(u)?),
+            5 => PgBool::JsonbIsContainedBy(jsonb(u)?, jsonb(u)?),
+            6 => PgBool::IsJson {
+                kind: u.arbitrary()?,
+                negated: u.arbitrary()?,
+                value: text(u)?,
+            },
+            7 => PgBool::Array(u.arbitrary()?, array(u)?, array(u)?),
+            8 => PgBool::Range(u.arbitrary()?, range(u)?, range(u)?),
+            9 => PgBool::RangeHas(range(u)?, int(u)?),
+            10 => PgBool::InRange(int(u)?, range(u)?),
+            11 => PgBool::Net(u.arbitrary()?, net(u)?, net(u)?),
+            12 => PgBool::NetDistance(u.arbitrary()?, net(u)?, net(u)?, u.arbitrary()?),
+            13 => PgBool::Stamp(
+                u.arbitrary()?,
+                boxed(Stamp::draw(u, budget))?,
+                boxed(Stamp::draw(u, budget))?,
+            ),
+            14 => PgBool::StampTz(
+                u.arbitrary()?,
+                boxed(StampTz::draw(u))?,
+                boxed(StampTz::draw(u))?,
+            ),
+            _ => PgBool::BinaryMatch {
+                negated: u.arbitrary()?,
+                value: binary(u)?,
+                pattern: binary(u)?,
+                escape: u.arbitrary()?,
+            },
+        })
+    }
+}
+
+impl<T> Bounds<T> {
+    fn draw(
+        u: &mut Unstructured<'_>,
+        mut end: impl FnMut(&mut Unstructured<'_>) -> arbitrary::Result<T>,
+    ) -> arbitrary::Result<Self> {
+        Ok(match u.choose_index(3)? {
+            0 => Bounds::Both(end(u)?, end(u)?),
+            1 => Bounds::From(end(u)?),
+            _ => Bounds::To(end(u)?),
+        })
+    }
+}
+
+impl IntArray {
+    fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
+        let deeper = budget.deeper();
+        let array = |u: &mut Unstructured<'_>| boxed(IntArray::draw(u, deeper));
+        Ok(match budget.choose(u, 2, 7, 7)? {
+            0 => IntArray::Column,
+            1 => IntArray::Literal(list(u, |u| u.arbitrary())?),
+            2 => IntArray::Concat(array(u)?, array(u)?),
+            3 => IntArray::Build({
+                let mut items = vec![Int::draw(u, deeper)?];
+                for _ in 0..u.int_in_range(0..=2)? {
+                    items.push(Int::draw(u, deeper)?);
+                }
+                items
+            }),
+            4 => IntArray::FromSubquery(boxed(Subquery::draw(u, deeper))?),
+            5 => IntArray::Slice(array(u)?, Bounds::draw(u, |u| boxed(Int::draw(u, deeper)))?),
+            _ => IntArray::SliceLiteral(array(u)?, Bounds::draw(u, |u| u.arbitrary())?),
+        })
+    }
+}
+
+impl Jsonb {
+    fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
+        let deeper = budget.deeper();
+        let jsonb = |u: &mut Unstructured<'_>| boxed(Jsonb::draw(u, deeper));
+        Ok(match budget.choose(u, 2, 9, 9)? {
+            0 => Jsonb::Column,
+            1 => Jsonb::Literal(json_value(u, 2)?),
+            2 => Jsonb::Concat(jsonb(u)?, jsonb(u)?),
+            3 => Jsonb::Remove(
+                jsonb(u)?,
+                match u.choose_index(3)? {
+                    0 => RemoveKey::Name(u.arbitrary()?),
+                    1 => RemoveKey::Position(u.arbitrary()?),
+                    _ => RemoveKey::Names(list(u, |u| u.arbitrary())?),
+                },
+            ),
+            4 => Jsonb::RemovePath(jsonb(u)?, list(u, |u| u.arbitrary())?),
+            5 => Jsonb::Field(jsonb(u)?, JsonKey::draw(u, deeper)?),
+            6 => Jsonb::Path(jsonb(u)?, list(u, |u| u.arbitrary())?),
+            7 => Jsonb::FromText(boxed(Text::draw(u, deeper))?),
+            _ => Jsonb::FromJson(boxed(Json::draw(u, deeper))?),
+        })
+    }
+}
+
+impl Range {
+    fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
+        let deeper = budget.deeper();
+        Ok(match budget.choose(u, 2, 3, 3)? {
+            0 => Range::Column,
+            1 => Range::Literal(bound(u)?, bound(u)?),
+            _ => Range::Combine(
+                u.arbitrary()?,
+                boxed(Range::draw(u, deeper))?,
+                boxed(Range::draw(u, deeper))?,
+            ),
+        })
+    }
+}
+
+fn bound(u: &mut Unstructured<'_>) -> arbitrary::Result<Bound<i32>> {
+    Ok(match u.choose_index(3)? {
+        0 => Bound::Included(u.arbitrary()?),
+        1 => Bound::Excluded(u.arbitrary()?),
+        _ => Bound::Unbounded,
+    })
+}
+
+impl Net {
+    fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
+        let deeper = budget.deeper();
+        Ok(match budget.choose(u, 2, 4, 4)? {
+            0 => Net::Column,
+            1 => Net::Literal(network(u)?),
+            2 => Net::Mask(
+                u.arbitrary()?,
+                boxed(Net::draw(u, deeper))?,
+                boxed(Net::draw(u, deeper))?,
+            ),
+            _ => Net::FromText(boxed(Text::draw(u, deeper))?),
+        })
+    }
+}
+
+fn network(u: &mut Unstructured<'_>) -> arbitrary::Result<IpNetwork> {
+    let (address, width): (std::net::IpAddr, u8) = if u.arbitrary()? {
+        (std::net::Ipv4Addr::from(u.arbitrary::<u32>()?).into(), 32)
+    } else {
+        (std::net::Ipv6Addr::from(u.arbitrary::<u128>()?).into(), 128)
+    };
+    let prefix = u.int_in_range(0..=width)?;
+    Ok(IpNetwork::new(address, prefix).expect("a prefix within the address width"))
+}
+
+impl Stamp {
+    fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
+        let deeper = budget.deeper();
+        Ok(match budget.choose(u, 2, 3, 3)? {
+            0 => Stamp::Column,
+            1 => Stamp::Literal(instant(u)?.naive_utc()),
+            _ => Stamp::AtZone(
+                Box::new(if u.arbitrary()? {
+                    Zoned::Stamp(boxed(Stamp::draw(u, deeper))?)
+                } else {
+                    Zoned::StampTz(boxed(StampTz::draw(u))?)
+                }),
+                boxed(Text::draw(u, deeper))?,
+            ),
+        })
+    }
+}
+
+impl StampTz {
+    fn draw(u: &mut Unstructured<'_>) -> arbitrary::Result<Self> {
+        Ok(if u.arbitrary()? {
+            StampTz::Column
+        } else {
+            StampTz::Literal(instant(u)?)
+        })
+    }
+}
+
+fn instant(u: &mut Unstructured<'_>) -> arbitrary::Result<DateTime<Utc>> {
+    let seconds = i64::from(u.arbitrary::<i32>()?);
+    Ok(DateTime::from_timestamp(seconds, 0).expect("an i32 of seconds is a valid instant"))
+}
+
+impl Binary {
+    fn draw(u: &mut Unstructured<'_>, budget: Budget) -> arbitrary::Result<Self> {
+        let deeper = budget.deeper();
+        Ok(match budget.choose(u, 2, 3, 3)? {
+            0 => Binary::Column,
+            1 => Binary::Literal(u.arbitrary()?),
+            _ => Binary::Concat(
+                boxed(Binary::draw(u, deeper))?,
+                boxed(Binary::draw(u, deeper))?,
+            ),
         })
     }
 }

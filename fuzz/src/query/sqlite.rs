@@ -4,416 +4,68 @@
 //! The reference binds every value diesel binds, in the same order and as the same sql type, so
 //! both statements evaluate alike and only the parentheses differ.
 
-use super::{
-    AggBig, AggBool, AggInt, Arith, Bool, Comparison, Grouping, Int, IntColumn, Json, JsonKey,
-    Order, Query, Subquery, Text, TextColumn, t,
-};
+use super::{Matcher, Nulls, PgBool, PgInt, PgJson, PgText};
 use diesel::connection::{CacheSize, SimpleConnection};
-use diesel::dsl::{case_when, count, count_star, exists, max, min, not, sum};
 use diesel::expression::TypedExpressionType;
-use diesel::expression::{
-    AppearsOnTable, BoxableExpression, Expression, SelectableExpression, ValidGrouping,
-    is_aggregate,
-};
-use diesel::prelude::*;
-use diesel::query_builder::{AstPass, QueryFragment, QueryId};
-use diesel::sql_types::{
-    BigInt, Bool as SqlBool, Integer, Json as SqlJson, Nullable, Text as SqlText,
-};
 use diesel::sqlite::Sqlite;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 
-pub type Boxed<'a, ST> = Box<dyn BoxableExpression<t::table, Sqlite, SqlType = Nullable<ST>> + 'a>;
+builder!(Sqlite);
 
-pub type Statement<'a> =
-    t::BoxedQuery<'a, Sqlite, (Nullable<Integer>, Nullable<SqlText>, Nullable<SqlBool>)>;
-
-pub type Subselect<'a> = t::BoxedQuery<'a, Sqlite, Nullable<Integer>>;
-
-/// An expression of a query grouped by `t.g`, which may aggregate.
-pub type Aggregate<'a, ST> = Box<
-    dyn BoxableExpression<t::table, Sqlite, t::g, is_aggregate::Yes, SqlType = Nullable<ST>> + 'a,
->;
-
-pub type GroupStatement<'a> = diesel::dsl::IntoBoxed<
-    'a,
-    diesel::dsl::Select<
-        diesel::dsl::GroupBy<t::table, t::g>,
-        (t::g, Aggregate<'a, Integer>, Aggregate<'a, BigInt>),
-    >,
-    Sqlite,
->;
-
-/// A boxed aggregate integer, which unlike the box itself takes `+`, `-`, `*` and `/`.
-#[derive(diesel::sql_types::DieselNumericOps)]
-pub struct AggNumber<'a>(Aggregate<'a, Integer>);
-
-impl Expression for AggNumber<'_> {
-    type SqlType = Nullable<Integer>;
-}
-
-impl QueryFragment<Sqlite> for AggNumber<'_> {
-    fn walk_ast<'b>(&'b self, pass: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
-        self.0.walk_ast(pass)
-    }
-}
-
-impl QueryId for AggNumber<'_> {
-    type QueryId = ();
-    const HAS_STATIC_QUERY_ID: bool = false;
-}
-
-impl ValidGrouping<t::g> for AggNumber<'_> {
-    type IsAggregate = is_aggregate::Yes;
-}
-
-impl AppearsOnTable<t::table> for AggNumber<'_> {}
-
-impl SelectableExpression<t::table> for AggNumber<'_> {}
-
-/// A boxed integer, which unlike the box itself takes `+`, `-`, `*` and `/`.
-#[derive(diesel::sql_types::DieselNumericOps)]
-pub struct Number<'a>(Boxed<'a, Integer>);
-
-impl Expression for Number<'_> {
-    type SqlType = Nullable<Integer>;
-}
-
-impl QueryFragment<Sqlite> for Number<'_> {
-    fn walk_ast<'b>(&'b self, pass: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
-        self.0.walk_ast(pass)
-    }
-}
-
-impl QueryId for Number<'_> {
-    type QueryId = ();
-    const HAS_STATIC_QUERY_ID: bool = false;
-}
-
-impl ValidGrouping<()> for Number<'_> {
-    type IsAggregate = is_aggregate::No;
-}
-
-impl AppearsOnTable<t::table> for Number<'_> {}
-
-impl SelectableExpression<t::table> for Number<'_> {}
-
-/// Runs `$body` once with `$key` bound to whichever key diesel receives, a bound name,
-/// a bound position, or an expression that is not null.
-macro_rules! keyed {
-    ($tree:expr, |$key:ident| $body:expr) => {
-        match $tree {
-            JsonKey::Name(name) => {
-                let $key = name.as_str();
-                $body
-            }
-            JsonKey::Position(position) => {
-                let $key = *position;
-                $body
-            }
-            JsonKey::Text(tree) => {
-                let $key = text(tree).assume_not_null();
-                $body
-            }
-            JsonKey::Int(tree) => {
-                let $key = int(tree).assume_not_null();
-                $body
-            }
-        }
-    };
-}
-
-pub fn statement(query: &Query) -> Statement<'_> {
-    let statement = t::table
-        .select((int(&query.int), text(&query.text), boolean(&query.bool)))
-        .order(t::id)
-        .into_boxed();
-    let statement = match &query.filter {
-        Some(filter) => statement.filter(boolean(filter)),
-        None => statement,
-    };
-    let statement = if query.distinct {
-        statement.distinct()
+fn distinct<'a>(
+    negated: bool,
+    left: Boxed<'a, Integer>,
+    right: Boxed<'a, Integer>,
+) -> Boxed<'a, SqlBool> {
+    if negated {
+        Box::new(left.is(right).nullable())
     } else {
-        statement
-    };
-    let statement = match query.limit {
-        Some(limit) => statement.limit(limit),
-        None => statement,
-    };
-    let statement = match query.offset {
-        Some(offset) => statement.offset(offset),
-        None => statement,
-    };
-    match &query.order {
-        None => statement,
-        Some(Order {
-            key,
-            descending: false,
-        }) => statement.then_order_by(int(key).asc()),
-        Some(Order {
-            key,
-            descending: true,
-        }) => statement.then_order_by(int(key).desc()),
+        Box::new(left.is_not(right).nullable())
     }
 }
 
-pub fn grouped(tree: &Grouping) -> GroupStatement<'_> {
-    let statement = t::table
-        .group_by(t::g)
-        .select((t::g, aggregate_int(&tree.int), aggregate_big(&tree.big)))
-        .into_boxed()
-        .order(t::g);
-    let statement = match &tree.filter {
-        Some(filter) => statement.filter(boolean(filter)),
-        None => statement,
-    };
-    match &tree.having {
-        Some(having) => statement.having(aggregate_bool(having)),
-        None => statement,
+/// Sqlite only has `LIKE`, so every matcher becomes one, in the reference as well.
+fn matches<'a>(
+    _: Matcher,
+    negated: bool,
+    value: Boxed<'a, SqlText>,
+    pattern: Boxed<'a, SqlText>,
+    escape: Option<char>,
+) -> Boxed<'a, SqlBool> {
+    match (negated, escape) {
+        (false, None) => Box::new(value.like(pattern)),
+        (false, Some(character)) => Box::new(value.like(pattern).escape(character)),
+        (true, None) => Box::new(value.not_like(pattern)),
+        (true, Some(character)) => Box::new(value.not_like(pattern).escape(character)),
     }
 }
 
-pub fn aggregate_int(tree: &AggInt) -> Aggregate<'_, Integer> {
-    match tree {
-        AggInt::Key => Box::new(t::g),
-        AggInt::Literal(value) => Box::new(value.into_sql::<Nullable<Integer>>()),
-        AggInt::Min(value) => Box::new(min(int(value))),
-        AggInt::Max(value) => Box::new(max(int(value))),
-        AggInt::Arith(op, left, right) => {
-            let (left, right) = (
-                AggNumber(aggregate_int(left)),
-                AggNumber(aggregate_int(right)),
-            );
-            match op {
-                Arith::Add => Box::new(left + right),
-                Arith::Sub => Box::new(left - right),
-                Arith::Mul => Box::new(left * right),
-                Arith::Div => Box::new(left / right),
-            }
-        }
-    }
+fn json_field<'a>(value: Boxed<'a, SqlJson>, key: &'a JsonKey) -> Boxed<'a, SqlJson> {
+    keyed!(key, |key| Box::new(value.retrieve_as_object_sqlite(key)))
 }
 
-pub fn aggregate_big(tree: &AggBig) -> Aggregate<'_, BigInt> {
-    match tree {
-        AggBig::Literal(value) => Box::new(value.into_sql::<Nullable<BigInt>>()),
-        AggBig::Sum(value) => Box::new(sum(int(value))),
-        AggBig::Count(value) => Box::new(count(int(value)).nullable()),
-        AggBig::CountStar => Box::new(count_star().nullable()),
-    }
+const POSTGRES_ONLY: &str = "the generator keeps postgres-only nodes out of sqlite queries";
+
+fn nulls_order<'a>(_: Statement<'a>, _: Boxed<'a, Integer>, _: bool, _: Nulls) -> Statement<'a> {
+    unreachable!("{POSTGRES_ONLY}")
 }
 
-pub fn aggregate_bool(tree: &AggBool) -> Aggregate<'_, SqlBool> {
-    macro_rules! compare_aggregates {
-        ($op:expr, $left:expr, $right:expr) => {{
-            let (left, right) = ($left, $right);
-            let compared: Aggregate<'_, SqlBool> = match $op {
-                Comparison::Eq => Box::new(left.eq(right)),
-                Comparison::NotEq => Box::new(left.ne(right)),
-                Comparison::Lt => Box::new(left.lt(right)),
-                Comparison::LtEq => Box::new(left.le(right)),
-                Comparison::Gt => Box::new(left.gt(right)),
-                Comparison::GtEq => Box::new(left.ge(right)),
-            };
-            compared
-        }};
-    }
-    match tree {
-        AggBool::Literal(value) => Box::new(value.into_sql::<Nullable<SqlBool>>()),
-        AggBool::Compare(op, left, right) => {
-            compare_aggregates!(op, aggregate_int(left), aggregate_int(right))
-        }
-        AggBool::CompareBig(op, left, right) => {
-            compare_aggregates!(op, aggregate_big(left), aggregate_big(right))
-        }
-        AggBool::IsNull {
-            negated: false,
-            value,
-        } => Box::new(aggregate_int(value).is_null().nullable()),
-        AggBool::IsNull {
-            negated: true,
-            value,
-        } => Box::new(aggregate_int(value).is_not_null().nullable()),
-        AggBool::And(left, right) => Box::new(aggregate_bool(left).and(aggregate_bool(right))),
-        AggBool::Or(left, right) => Box::new(aggregate_bool(left).or(aggregate_bool(right))),
-        AggBool::Not(inner) => Box::new(not(aggregate_bool(inner))),
-    }
+fn postgres_int(_: &PgInt) -> Boxed<'_, Integer> {
+    unreachable!("{POSTGRES_ONLY}")
 }
 
-pub fn subselect(tree: &Subquery) -> Subselect<'_> {
-    let subselect = t::table.select(int(&tree.select)).order(t::id).into_boxed();
-    match &tree.filter {
-        Some(filter) => subselect.filter(boolean(filter)),
-        None => subselect,
-    }
+fn postgres_text(_: &PgText) -> Boxed<'_, SqlText> {
+    unreachable!("{POSTGRES_ONLY}")
 }
 
-pub fn int(tree: &Int) -> Boxed<'_, Integer> {
-    match tree {
-        Int::Column(IntColumn::A) => Box::new(t::a.nullable()),
-        Int::Column(IntColumn::B) => Box::new(t::b),
-        Int::Column(IntColumn::G) => Box::new(t::g),
-        Int::Literal(value) => Box::new(value.into_sql::<Nullable<Integer>>()),
-        Int::Arith(op, left, right) => {
-            let (left, right) = (Number(int(left)), Number(int(right)));
-            match op {
-                Arith::Add => Box::new(left + right),
-                Arith::Sub => Box::new(left - right),
-                Arith::Mul => Box::new(left * right),
-                Arith::Div => Box::new(left / right),
-            }
-        }
-        Int::Case {
-            when,
-            then,
-            second,
-            otherwise,
-        } => {
-            let first = case_when::<_, _, Nullable<Integer>>(boolean(when), int(then));
-            match (second, otherwise) {
-                (None, None) => Box::new(first),
-                (None, Some(otherwise)) => Box::new(first.otherwise(int(otherwise))),
-                (Some((when, then)), None) => Box::new(first.when(boolean(when), int(then))),
-                (Some((when, then)), Some(otherwise)) => Box::new(
-                    first
-                        .when(boolean(when), int(then))
-                        .otherwise(int(otherwise)),
-                ),
-            }
-        }
-        Int::FromText(value) => Box::new(text(value).fallible_cast::<Nullable<Integer>>()),
-        Int::Scalar(subquery) => Box::new(subselect(subquery).single_value()),
-    }
+fn postgres_json(_: &PgJson) -> Boxed<'_, SqlJson> {
+    unreachable!("{POSTGRES_ONLY}")
 }
 
-pub fn text(tree: &Text) -> Boxed<'_, SqlText> {
-    match tree {
-        Text::Column(TextColumn::S) => Box::new(t::s.nullable()),
-        Text::Column(TextColumn::N) => Box::new(t::n),
-        Text::Literal(value) => Box::new(value.as_str().into_sql::<Nullable<SqlText>>()),
-        Text::Concat(left, right) => Box::new(text(left).concat(text(right))),
-        Text::FromInt(value) => Box::new(int(value).cast::<Nullable<SqlText>>()),
-        Text::FromJson(value) => Box::new(json(value).cast::<Nullable<SqlText>>()),
-        Text::JsonField(value, key) => {
-            keyed!(key, |key| Box::new(json(value).retrieve_as_text(key)))
-        }
-    }
-}
-
-pub fn json(tree: &Json) -> Boxed<'_, SqlJson> {
-    match tree {
-        Json::Column => Box::new(t::j),
-        Json::Literal(value) => Box::new(value.into_sql::<Nullable<SqlJson>>()),
-        Json::Field(value, key) => {
-            keyed!(key, |key| Box::new(
-                json(value).retrieve_as_object_sqlite(key)
-            ))
-        }
-        Json::FromText(value) => Box::new(text(value).fallible_cast::<Nullable<SqlJson>>()),
-    }
-}
-
-macro_rules! compare {
-    ($op:expr, $left:expr, $right:expr) => {{
-        let (left, right) = ($left, $right);
-        let compared: Boxed<'_, SqlBool> = match $op {
-            Comparison::Eq => Box::new(left.eq(right)),
-            Comparison::NotEq => Box::new(left.ne(right)),
-            Comparison::Lt => Box::new(left.lt(right)),
-            Comparison::LtEq => Box::new(left.le(right)),
-            Comparison::Gt => Box::new(left.gt(right)),
-            Comparison::GtEq => Box::new(left.ge(right)),
-        };
-        compared
-    }};
-}
-
-pub fn boolean(tree: &Bool) -> Boxed<'_, SqlBool> {
-    match tree {
-        Bool::Column => Box::new(t::f.nullable()),
-        Bool::Literal(value) => Box::new(value.into_sql::<Nullable<SqlBool>>()),
-        Bool::Compare(op, left, right) => compare!(op, int(left), int(right)),
-        Bool::CompareText(op, left, right) => compare!(op, text(left), text(right)),
-        Bool::Between {
-            negated: false,
-            value,
-            low,
-            high,
-        } => Box::new(int(value).between(int(low), int(high))),
-        Bool::Between {
-            negated: true,
-            value,
-            low,
-            high,
-        } => Box::new(int(value).not_between(int(low), int(high))),
-        Bool::In {
-            negated: false,
-            value,
-            list,
-        } => Box::new(int(value).eq_any(list)),
-        Bool::In {
-            negated: true,
-            value,
-            list,
-        } => Box::new(int(value).ne_all(list)),
-        Bool::InSubquery {
-            negated: false,
-            value,
-            subquery,
-        } => Box::new(int(value).eq_any(subselect(subquery))),
-        Bool::InSubquery {
-            negated: true,
-            value,
-            subquery,
-        } => Box::new(int(value).ne_all(subselect(subquery))),
-        Bool::Exists(subquery) => Box::new(exists(subselect(subquery)).nullable()),
-        Bool::IsNull {
-            negated: false,
-            value,
-        } => Box::new(int(value).is_null().nullable()),
-        Bool::IsNull {
-            negated: true,
-            value,
-        } => Box::new(int(value).is_not_null().nullable()),
-        Bool::IsNullText {
-            negated: false,
-            value,
-        } => Box::new(text(value).is_null().nullable()),
-        Bool::IsNullText {
-            negated: true,
-            value,
-        } => Box::new(text(value).is_not_null().nullable()),
-        Bool::Distinct {
-            negated: false,
-            left,
-            right,
-        } => Box::new(int(left).is_not(int(right)).nullable()),
-        Bool::Distinct {
-            negated: true,
-            left,
-            right,
-        } => Box::new(int(left).is(int(right)).nullable()),
-        Bool::Match {
-            negated,
-            value,
-            pattern,
-            escape,
-        } => {
-            let (value, pattern) = (text(value), text(pattern));
-            match (negated, escape) {
-                (false, None) => Box::new(value.like(pattern)),
-                (false, Some(character)) => Box::new(value.like(pattern).escape(*character)),
-                (true, None) => Box::new(value.not_like(pattern)),
-                (true, Some(character)) => Box::new(value.not_like(pattern).escape(*character)),
-            }
-        }
-        Bool::And(left, right) => Box::new(boolean(left).and(boolean(right))),
-        Bool::Or(left, right) => Box::new(boolean(left).or(boolean(right))),
-        Bool::Not(inner) => Box::new(not(boolean(inner))),
-    }
+fn postgres_bool(_: &PgBool) -> Boxed<'_, SqlBool> {
+    unreachable!("{POSTGRES_ONLY}")
 }
 
 const ROWS: &str = r#"
@@ -466,7 +118,11 @@ pub struct Divergence {
 
 /// Runs the statement diesel builds for `query` and the reference rendering of the same tree.
 /// Equal errors pass, since then sqlite refused the expression rather than diesel's spelling.
+/// A postgres query passes untried.
 pub fn check(query: &Query) -> Result<(), Divergence> {
+    if query.postgres {
+        return Ok(());
+    }
     CONN.with(|conn| {
         let conn = &mut *conn.borrow_mut();
         let mut built_answer: Answer = statement(query).load(conn).map_err(|e| e.to_string());
@@ -492,6 +148,9 @@ pub fn check(query: &Query) -> Result<(), Divergence> {
 
 /// [`check`] for a grouped query.
 pub fn check_grouped(tree: &Grouping) -> Result<(), Divergence> {
+    if tree.postgres {
+        return Ok(());
+    }
     CONN.with(|conn| {
         let conn = &mut *conn.borrow_mut();
         let built_answer: Result<Vec<Group>, String> =
@@ -674,7 +333,7 @@ mod written {
         AggBig, AggBool, AggInt, Arith, Bool, Comparison, Int, IntColumn, Json, JsonKey, Subquery,
         Text, TextColumn,
     };
-    use super::{Bind, Sink};
+    use super::{Bind, POSTGRES_ONLY, Sink};
 
     type Out<'o, 'q> = &'o mut Sink<'q>;
 
@@ -769,6 +428,7 @@ mod written {
             }
             Int::FromText(value) => cast(out, |out| write_text(value, out), "integer"),
             Int::Scalar(tree) => subquery(tree, out, true),
+            Int::Postgres(_) => unreachable!("{POSTGRES_ONLY}"),
         }
     }
 
@@ -795,6 +455,7 @@ mod written {
                     |out| key(field, out),
                 );
             }
+            Text::Postgres(_) => unreachable!("{POSTGRES_ONLY}"),
         }
     }
 
@@ -811,6 +472,7 @@ mod written {
                 );
             }
             Json::FromText(value) => cast(out, |out| write_text(value, out), "json"),
+            Json::Postgres(_) => unreachable!("{POSTGRES_ONLY}"),
         }
     }
 
@@ -914,6 +576,7 @@ mod written {
                 value,
                 pattern,
                 escape,
+                ..
             } => {
                 out.sql("(");
                 write_text(value, out);
@@ -942,6 +605,7 @@ mod written {
                 write_bool(inner, out);
                 out.sql(")");
             }
+            Bool::Postgres(_) => unreachable!("{POSTGRES_ONLY}"),
         }
     }
 

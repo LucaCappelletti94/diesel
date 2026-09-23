@@ -110,11 +110,15 @@ fn a_decoded_blob_is_the_one_sqlite_calls_valid() {
 }
 
 mod query_builder {
+    use chrono::DateTime;
     use diesel_fuzz::query::{
-        AggBig, AggBool, AggInt, Arith, Bool, Comparison, Grouping, Int, IntColumn, Json, JsonKey,
-        Order, Query, Subquery, Text, TextColumn, sqlite,
+        AggBig, AggBool, AggInt, Arith, ArrayOp, Binary, Bool, Bounds, Comparison, Grouping, Input,
+        Int, IntArray, IntColumn, Json, JsonKey, JsonKind, Jsonb, Matcher, Net, NetMask, NetOp,
+        Nulls, Order, PgBool, PgInt, PgJson, PgText, Query, Range, RangeCombine, RangeOp,
+        RemoveKey, Stamp, StampTz, Subquery, Text, TextColumn, Zoned, pg, sqlite,
     };
     use serde_json::json;
+    use std::collections::Bound;
 
     fn int(tree: Int) -> Box<Int> {
         Box::new(tree)
@@ -170,8 +174,9 @@ mod query_builder {
     }
 
     /// Places `predicate` under a `NOT` inside a `CASE`, where a lost parenthesis would show.
-    fn query(int_tree: Int, text_tree: Text, predicate: Bool) -> Query {
+    fn query(postgres: bool, int_tree: Int, text_tree: Text, predicate: Bool) -> Query {
         Query {
+            postgres,
             distinct: false,
             int: Int::Case {
                 when: boolean(Bool::Not(boolean(predicate))),
@@ -203,13 +208,17 @@ mod query_builder {
             order: Some(Order {
                 key: right_nested(),
                 descending: true,
+                nulls: postgres.then_some(Nulls::First),
             }),
             limit: None,
             offset: None,
         }
     }
 
-    fn assert_oracle_passes(query: &Query) {
+    fn assert_oracles_pass(query: &Query) {
+        if let Err(violation) = pg::check(query) {
+            panic!("{violation}");
+        }
         if let Err(violation) = sqlite::check(query) {
             panic!("{violation}");
         }
@@ -267,21 +276,25 @@ mod query_builder {
                 left: a(),
                 right: b(),
             });
-            for escape in [None, Some('!'), Some('\0')] {
+            for matcher in [Matcher::Like, Matcher::ILike, Matcher::SimilarTo] {
+                for escape in [None, Some('!'), Some('\0')] {
+                    predicates.push(Bool::Match {
+                        matcher,
+                        negated,
+                        value: s(),
+                        pattern: text(Text::Concat(n(), text(Text::Literal("%".to_owned())))),
+                        escape,
+                    });
+                }
+                // `\%` matches only the literal `%` of `a%b`, so the answer changes without `ESCAPE`
                 predicates.push(Bool::Match {
+                    matcher,
                     negated,
                     value: s(),
-                    pattern: text(Text::Concat(n(), text(Text::Literal("%".to_owned())))),
-                    escape,
+                    pattern: text(Text::Literal("a\\%b".to_owned())),
+                    escape: Some('\\'),
                 });
             }
-            // `\%` matches only the literal `%` of `a%b`, so the answer changes without `ESCAPE`
-            predicates.push(Bool::Match {
-                negated,
-                value: s(),
-                pattern: text(Text::Literal("a\\%b".to_owned())),
-                escape: Some('\\'),
-            });
         }
         predicates
     }
@@ -315,28 +328,258 @@ mod query_builder {
     }
 
     #[test]
-    fn every_node_passes_the_sqlite_oracle() {
+    fn every_shared_node_passes_both_oracles() {
         for predicate in shared_predicates() {
-            assert_oracle_passes(&query(
+            assert_oracles_pass(&query(
+                false,
                 right_nested(),
                 Text::Literal("x".to_owned()),
                 predicate,
             ));
         }
         for int_tree in shared_ints() {
-            assert_oracle_passes(&query(
+            assert_oracles_pass(&query(
+                false,
                 int_tree,
                 Text::Literal("x".to_owned()),
                 Bool::Column,
             ));
         }
         for text_tree in shared_texts() {
-            assert_oracle_passes(&query(right_nested(), text_tree, Bool::Column));
+            assert_oracles_pass(&query(false, right_nested(), text_tree, Bool::Column));
+        }
+    }
+
+    fn jsonb() -> Box<Jsonb> {
+        Box::new(Jsonb::Concat(
+            Box::new(Jsonb::Column),
+            Box::new(Jsonb::Literal(json!({"k": [1, 2]}))),
+        ))
+    }
+
+    fn ints() -> Box<IntArray> {
+        Box::new(IntArray::Concat(
+            Box::new(IntArray::Column),
+            Box::new(IntArray::Literal(vec![1, 2])),
+        ))
+    }
+
+    fn range() -> Box<Range> {
+        Box::new(Range::Combine(
+            RangeCombine::Union,
+            Box::new(Range::Column),
+            Box::new(Range::Literal(Bound::Included(1), Bound::Excluded(9))),
+        ))
+    }
+
+    fn net() -> Box<Net> {
+        Box::new(Net::Mask(
+            NetMask::And,
+            Box::new(Net::Column),
+            Box::new(Net::Literal("10.0.0.0/8".parse().expect("a network"))),
+        ))
+    }
+
+    fn postgres_arrays() -> Vec<IntArray> {
+        let mut arrays = vec![
+            IntArray::Build(vec![right_nested()]),
+            IntArray::Build(vec![right_nested(), *a()]),
+            IntArray::Build(vec![right_nested(), *a(), *b()]),
+            IntArray::FromSubquery(subquery()),
+        ];
+        for bounds in [
+            Bounds::Both(a(), int(right_nested())),
+            Bounds::From(int(right_nested())),
+            Bounds::To(a()),
+        ] {
+            arrays.push(IntArray::Slice(ints(), bounds));
+        }
+        for bounds in [Bounds::Both(1, 2), Bounds::From(1), Bounds::To(2)] {
+            arrays.push(IntArray::SliceLiteral(ints(), bounds));
+        }
+        arrays
+    }
+
+    fn postgres_jsonbs() -> Vec<Jsonb> {
+        let mut values = vec![
+            Jsonb::Remove(jsonb(), RemoveKey::Name("k".to_owned())),
+            Jsonb::Remove(jsonb(), RemoveKey::Position(0)),
+            Jsonb::Remove(
+                jsonb(),
+                RemoveKey::Names(vec!["k".to_owned(), "j".to_owned()]),
+            ),
+            Jsonb::RemovePath(jsonb(), vec!["k".to_owned(), "0".to_owned()]),
+            Jsonb::Path(jsonb(), vec!["k".to_owned()]),
+            Jsonb::FromText(text(Text::Concat(s(), n()))),
+            Jsonb::FromJson(Box::new(Json::Column)),
+        ];
+        for key in keys() {
+            values.push(Jsonb::Field(jsonb(), key));
+        }
+        values
+    }
+
+    fn postgres_predicates() -> Vec<Bool> {
+        let mut predicates = vec![
+            PgBool::FromInt(int(right_nested())),
+            PgBool::HasKey(jsonb(), text(Text::Concat(s(), n()))),
+            PgBool::HasAnyKey(jsonb(), vec!["k".to_owned()]),
+            PgBool::HasAllKeys(jsonb(), vec!["k".to_owned(), "j".to_owned()]),
+            PgBool::JsonbContains(jsonb(), jsonb()),
+            PgBool::JsonbIsContainedBy(jsonb(), jsonb()),
+            PgBool::RangeHas(range(), int(right_nested())),
+            PgBool::InRange(int(right_nested()), range()),
+            PgBool::NetDistance(Comparison::Gt, net(), net(), 3),
+        ];
+        for kind in [
+            JsonKind::Any,
+            JsonKind::Object,
+            JsonKind::Array,
+            JsonKind::Scalar,
+        ] {
+            for negated in [false, true] {
+                predicates.push(PgBool::IsJson {
+                    kind,
+                    negated,
+                    value: text(Text::Concat(s(), n())),
+                });
+            }
+        }
+        for op in [ArrayOp::Overlaps, ArrayOp::Contains, ArrayOp::IsContainedBy] {
+            predicates.push(PgBool::Array(op, ints(), ints()));
+        }
+        for op in [
+            RangeOp::Contains,
+            RangeOp::IsContainedBy,
+            RangeOp::Overlaps,
+            RangeOp::ExtendsRightTo,
+            RangeOp::ExtendsLeftTo,
+            RangeOp::LesserThan,
+            RangeOp::GreaterThan,
+            RangeOp::Adjacent,
+        ] {
+            predicates.push(PgBool::Range(op, range(), range()));
+        }
+        for combine in [
+            RangeCombine::Union,
+            RangeCombine::Difference,
+            RangeCombine::Intersection,
+        ] {
+            predicates.push(PgBool::Range(
+                RangeOp::Overlaps,
+                Box::new(Range::Combine(combine, range(), range())),
+                range(),
+            ));
+        }
+        for op in [
+            NetOp::Contains,
+            NetOp::ContainsOrEq,
+            NetOp::IsContainedBy,
+            NetOp::IsContainedByOrEq,
+            NetOp::Overlaps,
+        ] {
+            predicates.push(PgBool::Net(op, net(), net()));
+        }
+        predicates.push(PgBool::Net(
+            NetOp::Overlaps,
+            Box::new(Net::Mask(NetMask::Or, net(), net())),
+            Box::new(Net::FromText(n())),
+        ));
+        let zone = || text(Text::Concat(s(), n()));
+        predicates.push(PgBool::Stamp(
+            Comparison::Lt,
+            Box::new(Stamp::AtZone(
+                Box::new(Zoned::StampTz(Box::new(StampTz::Column))),
+                zone(),
+            )),
+            Box::new(Stamp::AtZone(
+                Box::new(Zoned::Stamp(Box::new(Stamp::Literal(
+                    DateTime::from_timestamp(0, 0)
+                        .expect("the epoch")
+                        .naive_utc(),
+                )))),
+                zone(),
+            )),
+        ));
+        predicates.push(PgBool::StampTz(
+            Comparison::GtEq,
+            Box::new(StampTz::Column),
+            Box::new(StampTz::Literal(
+                DateTime::from_timestamp(0, 0).expect("the epoch"),
+            )),
+        ));
+        for negated in [false, true] {
+            for escape in [None, Some('!')] {
+                predicates.push(PgBool::BinaryMatch {
+                    negated,
+                    value: Box::new(Binary::Concat(
+                        Box::new(Binary::Column),
+                        Box::new(Binary::Literal(vec![0, 255])),
+                    )),
+                    pattern: Box::new(Binary::Literal(b"%".to_vec())),
+                    escape,
+                });
+            }
+        }
+        for array in postgres_arrays() {
+            predicates.push(PgBool::Array(ArrayOp::Overlaps, Box::new(array), ints()));
+        }
+        for value in postgres_jsonbs() {
+            predicates.push(PgBool::JsonbContains(Box::new(value), jsonb()));
+        }
+        predicates.into_iter().map(Bool::Postgres).collect()
+    }
+
+    fn postgres_ints() -> Vec<Int> {
+        vec![
+            Int::Postgres(PgInt::FromBool(boolean(Bool::Column))),
+            Int::Postgres(PgInt::Index(ints(), int(right_nested()))),
+            Int::Postgres(PgInt::IndexLiteral(
+                Box::new(IntArray::Slice(ints(), Bounds::From(a()))),
+                1,
+            )),
+        ]
+    }
+
+    fn postgres_texts() -> Vec<Text> {
+        let mut texts = vec![
+            Text::Postgres(PgText::FromBool(boolean(Bool::Column))),
+            Text::Postgres(PgText::FromJsonb(jsonb())),
+            Text::Postgres(PgText::FromNet(net())),
+            Text::Postgres(PgText::JsonbPath(jsonb(), vec!["k".to_owned()])),
+            Text::FromJson(Box::new(Json::Postgres(PgJson::FromJsonb(jsonb())))),
+        ];
+        for key in keys() {
+            texts.push(Text::Postgres(PgText::JsonbField(jsonb(), key)));
+        }
+        texts
+    }
+
+    #[test]
+    fn every_postgres_node_passes_the_postgres_oracle() {
+        for predicate in postgres_predicates() {
+            assert_oracles_pass(&query(
+                true,
+                right_nested(),
+                Text::Literal("x".to_owned()),
+                predicate,
+            ));
+        }
+        for int_tree in postgres_ints() {
+            assert_oracles_pass(&query(
+                true,
+                int_tree,
+                Text::Literal("x".to_owned()),
+                Bool::Column,
+            ));
+        }
+        for text_tree in postgres_texts() {
+            assert_oracles_pass(&query(true, right_nested(), text_tree, Bool::Column));
         }
     }
 
     #[test]
-    fn every_clause_passes_the_sqlite_oracle() {
+    fn every_clause_passes_both_oracles() {
         for (distinct, limit, offset) in [
             (true, None, None),
             (false, Some(2), None),
@@ -344,15 +587,18 @@ mod query_builder {
             (false, Some(3), Some(2)),
             (false, Some(0), Some(6)),
         ] {
-            let mut query = query(
-                Int::Arith(Arith::Add, int(Int::Column(IntColumn::G)), a()),
-                Text::Literal("x".to_owned()),
-                Bool::Compare(Comparison::Gt, int(Int::Column(IntColumn::G)), b()),
-            );
-            query.distinct = distinct;
-            query.limit = limit;
-            query.offset = offset;
-            assert_oracle_passes(&query);
+            for postgres in [false, true] {
+                let mut query = query(
+                    postgres,
+                    Int::Arith(Arith::Add, int(Int::Column(IntColumn::G)), a()),
+                    Text::Literal("x".to_owned()),
+                    Bool::Compare(Comparison::Gt, int(Int::Column(IntColumn::G)), b()),
+                );
+                query.distinct = distinct;
+                query.limit = limit;
+                query.offset = offset;
+                assert_oracles_pass(&query);
+            }
         }
     }
 
@@ -423,17 +669,21 @@ mod query_builder {
         ]
     }
 
-    fn assert_grouped_oracle_passes(tree: &Grouping) {
+    fn assert_grouped_oracles_pass(tree: &Grouping) {
+        if let Err(violation) = pg::check_grouped(tree) {
+            panic!("{violation}");
+        }
         if let Err(violation) = sqlite::check_grouped(tree) {
             panic!("{violation}");
         }
     }
 
     #[test]
-    fn every_grouped_node_passes_the_sqlite_oracle() {
+    fn every_grouped_node_passes_both_oracles() {
         let filter = || Some(Bool::Compare(Comparison::NotEq, a(), int(Int::Literal(7))));
         for int_tree in grouped_ints() {
-            assert_grouped_oracle_passes(&Grouping {
+            assert_grouped_oracles_pass(&Grouping {
+                postgres: false,
                 int: int_tree,
                 big: AggBig::CountStar,
                 filter: filter(),
@@ -441,7 +691,8 @@ mod query_builder {
             });
         }
         for big in grouped_bigs() {
-            assert_grouped_oracle_passes(&Grouping {
+            assert_grouped_oracles_pass(&Grouping {
+                postgres: false,
                 int: AggInt::Key,
                 big,
                 filter: None,
@@ -449,7 +700,8 @@ mod query_builder {
             });
         }
         for having in grouped_predicates() {
-            assert_grouped_oracle_passes(&Grouping {
+            assert_grouped_oracles_pass(&Grouping {
+                postgres: false,
                 int: AggInt::Key,
                 big: AggBig::CountStar,
                 filter: filter(),
@@ -458,16 +710,13 @@ mod query_builder {
         }
     }
 
-    /// A page of a `DISTINCT` query depends on which duplicate sqlite keeps, so the generator
-    /// never draws one.
     #[test]
-    fn distinct_queries_draw_no_page() {
+    fn sqlite_queries_draw_no_postgres_node() {
         use arbitrary::{Arbitrary, Unstructured};
-        use diesel_fuzz::query::Input;
 
         let mut state: u64 = 1;
         let mut bytes = vec![0u8; 2048];
-        let mut distinct = 0;
+        let mut sqlite_queries = 0;
         for _ in 0..4096 {
             for byte in &mut bytes {
                 state = state
@@ -475,16 +724,22 @@ mod query_builder {
                     .wrapping_add(1_442_695_040_888_963_407);
                 *byte = (state >> 33) as u8;
             }
-            if let Ok(Input::Rows(query)) = Input::arbitrary(&mut Unstructured::new(&bytes))
-                && query.distinct
-            {
-                distinct += 1;
-                assert_eq!((query.limit, query.offset), (None, None));
+            let Ok(input) = Input::arbitrary(&mut Unstructured::new(&bytes)) else {
+                continue;
+            };
+            match input {
+                Input::Rows(query) if !query.postgres => {
+                    sqlite_queries += 1;
+                    assert!(query.order.is_none_or(|order| order.nulls.is_none()));
+                    assert!(!query.distinct || (query.limit, query.offset) == (None, None));
+                }
+                Input::Groups(tree) if !tree.postgres => sqlite_queries += 1,
+                _ => {}
             }
         }
         assert!(
-            distinct > 100,
-            "too few distinct queries to exercise the generator"
+            sqlite_queries > 1000,
+            "too few sqlite queries to exercise the generator"
         );
     }
 
@@ -493,6 +748,7 @@ mod query_builder {
     #[test]
     fn an_empty_list_guards_an_operand_as_diesel_spells_it() {
         let query = Query {
+            postgres: false,
             distinct: false,
             int: *a(),
             text: *s(),
@@ -516,6 +772,29 @@ mod query_builder {
             limit: None,
             offset: None,
         };
-        assert_oracle_passes(&query);
+        assert_oracles_pass(&query);
+    }
+
+    #[test]
+    fn postgres_oracle_catches_a_lost_parenthesis() {
+        let query = Query {
+            postgres: false,
+            distinct: false,
+            int: right_nested(),
+            text: Text::Column(TextColumn::S),
+            bool: Bool::Column,
+            filter: None,
+            order: None,
+            limit: None,
+            offset: None,
+        };
+        let faithful =
+            r#"SELECT ("t"."a" - ("t"."b" - $1)), "t"."s", "t"."f" FROM "t" ORDER BY "t"."id""#;
+        pg::compare(faithful.to_owned(), &query).expect("the faithful spelling");
+        let lost = r#"SELECT "t"."a" - "t"."b" - $1, "t"."s", "t"."f" FROM "t" ORDER BY "t"."id""#;
+        assert!(matches!(
+            pg::compare(lost.to_owned(), &query),
+            Err(pg::Violation::Nesting { .. })
+        ));
     }
 }

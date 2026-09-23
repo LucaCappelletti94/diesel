@@ -19,6 +19,7 @@ ipnet = "2.5.0"
 ipnetwork = "0.21"
 uuid = "1"
 libsqlite3-sys = { version = "0.38", features = ["bundled"] }
+pg_query = "6.2"
 thiserror = "2"
 
 [dependencies.diesel]
