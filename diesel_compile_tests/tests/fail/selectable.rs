@@ -85,6 +85,12 @@ struct UserWithoutSelectable {
     name: String,
 }
 
+#[derive(Queryable)]
+struct PostWithoutSelectable {
+    id: i32,
+    title: String,
+}
+
 fn main() {
     let mut conn = PgConnection::establish("").unwrap();
 
@@ -256,6 +262,16 @@ fn main() {
         .select((Post::as_select(), posts::title))
         .load::<((i32, String), String)>(&mut conn)
         //~^ ERROR: the trait bound `(SelectBy<Post, _>, Text): CompatibleType<..., _>` is not satisfied
+        .unwrap();
+    let _ = posts::table
+        .select(((Post::as_select(), posts::title), posts::id))
+        .load::<(((i32, String), String), i32)>(&mut conn)
+        //~^ ERROR: the trait bound `((..., ...), ...): CompatibleType<..., _>` is not satisfied
+        .unwrap();
+    let _ = posts::table
+        .select(((Post::as_select(), posts::title), posts::id))
+        .load::<((PostWithoutSelectable, String), i32)>(&mut conn)
+        //~^ ERROR: the trait bound `((..., ...), ...): CompatibleType<..., _>` is not satisfied
         .unwrap();
     let _ = diesel::insert_into(posts::table)
         .values(posts::title.eq(""))
