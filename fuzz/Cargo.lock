@@ -180,6 +180,7 @@ dependencies = [
  "libfuzzer-sys",
  "libsqlite3-sys",
  "serde_json",
+ "thiserror",
  "time",
  "uuid",
 ]

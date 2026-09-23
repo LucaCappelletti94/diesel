@@ -107,6 +107,8 @@ jobs:
         run: |
           corpus=""
           if [ -d "fuzz/corpus/$TARGET" ]; then corpus="fuzz/corpus/$TARGET"; fi
+          # see .clusterfuzzlite/query_builder.options
+          if [ "$TARGET" = query_builder ]; then export ASAN_OPTIONS=malloc_context_size=5; fi
           cargo +nightly fuzz run --fuzz-dir fuzz "$TARGET" $corpus -- \
             -max_total_time="$BUDGET" \
             -max_len=4096 \

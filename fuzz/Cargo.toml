@@ -19,6 +19,7 @@ ipnet = "2.5.0"
 ipnetwork = "0.21"
 uuid = "1"
 libsqlite3-sys = { version = "0.38", features = ["bundled"] }
+thiserror = "2"
 
 [dependencies.diesel]
 path = "../diesel"
@@ -75,6 +76,13 @@ bench = false
 [[bin]]
 name = "mysql_from_sql"
 path = "fuzz_targets/mysql_from_sql.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "query_builder"
+path = "fuzz_targets/query_builder.rs"
 test = false
 doc = false
 bench = false

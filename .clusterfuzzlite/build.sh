@@ -16,6 +16,8 @@ for name in $targets; do
     cp "$target_dir/$name" "$OUT/"
 done
 
+cp .clusterfuzzlite/*.options "$OUT/"
+
 # cifuzz unpacks <target>_seed_corpus.zip before fuzzing
 for dir in fuzz/corpus/*/; do
     name=$(basename "$dir")

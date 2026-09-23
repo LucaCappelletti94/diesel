@@ -1,0 +1,4 @@
+# asan keeps every distinct allocation stack for good, and the recursive tree builder makes a new one
+# for almost every input, which exhausts memory within ten minutes
+[asan]
+malloc_context_size = 5
