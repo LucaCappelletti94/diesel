@@ -184,6 +184,8 @@ pub trait PgTimestampExpressionMethods: Expression + Sized {
     /// the value will be converted to the given time zone,
     /// and then have its time zone information removed.
     ///
+    /// A nullable value gives a nullable result.
+    ///
     /// # Example
     ///
     /// ```rust

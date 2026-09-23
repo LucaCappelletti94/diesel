@@ -2,7 +2,10 @@ use crate::expression::{Expression, ValidGrouping};
 use crate::pg::Pg;
 use crate::query_builder::*;
 use crate::result::QueryResult;
-use crate::sql_types::{Date, Nullable, SqlType, Timestamp, Timestamptz, VarChar, is_nullable};
+use crate::sql_types::is_nullable::{IsSqlTypeNullable, MaybeNullable};
+use crate::sql_types::{
+    Date, MaybeNullableType, Nullable, SqlType, Timestamp, Timestamptz, VarChar, is_nullable,
+};
 
 /// Marker trait for types which are valid in `AT TIME ZONE` expressions
 pub trait DateTimeLike {}
@@ -28,10 +31,11 @@ impl<Ts, Tz> AtTimeZone<Ts, Tz> {
 impl<Ts, Tz> Expression for AtTimeZone<Ts, Tz>
 where
     Ts: Expression,
-    Ts::SqlType: DateTimeLike,
+    Ts::SqlType: SqlType + DateTimeLike,
+    IsSqlTypeNullable<Ts::SqlType>: MaybeNullableType<Timestamp>,
     Tz: Expression<SqlType = VarChar>,
 {
-    type SqlType = Timestamp;
+    type SqlType = MaybeNullable<IsSqlTypeNullable<Ts::SqlType>, Timestamp>;
 }
 
 impl<Ts, Tz> QueryFragment<Pg> for AtTimeZone<Ts, Tz>

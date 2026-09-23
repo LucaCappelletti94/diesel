@@ -215,12 +215,14 @@ mod tests {
     extern crate chrono;
     extern crate dotenvy;
 
-    use self::chrono::{Duration, FixedOffset, NaiveDate, NaiveTime, TimeZone, Utc};
+    use self::chrono::{
+        DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc,
+    };
 
     use crate::dsl::{now, sql};
     use crate::prelude::*;
     use crate::select;
-    use crate::sql_types::{Date, Interval, Time, Timestamp, Timestamptz};
+    use crate::sql_types::{Date, Interval, Nullable, Time, Timestamp, Timestamptz};
     use crate::test_helpers::connection;
 
     #[diesel_test_helper::test]
@@ -392,6 +394,29 @@ mod tests {
             .unwrap();
         let query = select(time.into_sql::<Timestamptz>().at_time_zone("EDT"));
         assert_eq!(Ok(expected), query.get_result(connection));
+    }
+
+    #[diesel_test_helper::test]
+    fn null_times_stay_null_after_time_zone_conversion() {
+        let connection = &mut connection();
+        let with_zone = select(
+            None::<DateTime<Utc>>
+                .into_sql::<Nullable<Timestamptz>>()
+                .at_time_zone("UTC"),
+        );
+        assert_eq!(
+            Ok(None),
+            with_zone.get_result::<Option<NaiveDateTime>>(connection)
+        );
+        let without_zone = select(
+            None::<NaiveDateTime>
+                .into_sql::<Nullable<Timestamp>>()
+                .at_time_zone("UTC"),
+        );
+        assert_eq!(
+            Ok(None),
+            without_zone.get_result::<Option<NaiveDateTime>>(connection)
+        );
     }
 
     #[diesel_test_helper::test]
