@@ -3,5 +3,6 @@
 pub mod document;
 pub mod mysql;
 pub mod pg;
+pub mod pg_differential;
 pub mod sqlite;
 pub mod sqlite_blob;

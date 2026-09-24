@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use diesel_fuzz::{document, mysql, pg, sqlite, sqlite_blob};
+use diesel_fuzz::{document, mysql, pg, pg_differential, sqlite, sqlite_blob};
 use std::num::NonZeroU32;
 
 #[test]
@@ -133,4 +133,30 @@ fn a_decoded_blob_is_the_one_sqlite_calls_valid() {
         assert_eq!(sqlite::jsonb_valid(conn, &[0xFF]), Ok(false));
         assert!(sqlite::decode_jsonb(conn, &[0xFF]).is_err());
     });
+}
+
+#[test]
+fn diesel_and_postgres_types_agree_on_simple_values() {
+    // an array header claiming `i32::MAX` elements, which only diesel is given
+    let mut oversized = Vec::new();
+    for word in [1i32, 0, 23, i32::MAX, 1] {
+        oversized.extend_from_slice(&word.to_be_bytes());
+    }
+    for selector in 0..pg_differential::CASES.len() {
+        let selector = u8::try_from(selector).expect("under 256 cases");
+        for bytes in [
+            &[][..],
+            &[0x01],
+            &[0x00, 0x2A],
+            &[0xFF; 4],
+            &[0x7F; 8],
+            &[0x01; 16],
+            b"{\"a\":[1,2]}",
+            &oversized,
+        ] {
+            if let Err(violation) = pg_differential::check_case(selector, bytes) {
+                panic!("{violation}");
+            }
+        }
+    }
 }
