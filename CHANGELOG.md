@@ -54,6 +54,7 @@ Increasing the minimal supported Rust version will always be coupled at least wi
 * Added `BoxedCloneQuery` type. This is a boxed query that uses `Arc` to allow the query to be cloned.
 * Added `SqliteConnection::wal_checkpoint` to checkpoint the write-ahead log through the typed `WalCheckpointMode` enum, returning a `WalCheckpointOutcome` with the busy flag and frame counts, and accepting an optional schema name where `None` checkpoints every attached database.
 * Added typed SQLite pragma access for per-schema and per-connection settings through `diesel::sqlite::pragma`.
+* Added `diesel::sqlite::pragma::table_info` and `table_xinfo` query constructors with typed column metadata, primary-key ordinals, and generated/hidden column classification.
 * Added support for `RETURNING` to  Mariadb (`UPDATE ... RETURNING` requires Mariadb >= 13)
 * Added support for `VALUES(column)` in Upsert for Mysql and Mariadb
 * Added the `UnsignedTiny`, `UnsignedSmall`, `UnsignedMedium` and `UnsignedBig` variants to `NumericRepresentation` for the MySQL and MariaDB backends

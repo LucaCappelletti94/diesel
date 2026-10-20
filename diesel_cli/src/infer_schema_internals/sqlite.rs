@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use diesel::connection::DatabaseVersion;
-use diesel::deserialize::Queryable;
+use diesel::deserialize::FromSqlRow;
 use diesel::dsl::sql;
-use diesel::row::NamedRow;
-use diesel::sql_types::{Bool, Text};
+use diesel::row::{NamedRow, Row};
+use diesel::sql_types::{Bool, Integer, Text};
 use diesel::sqlite::Sqlite;
+use diesel::sqlite::pragma::{TableInfoSqlType, TableXInfoSqlType, table_info, table_xinfo};
 use diesel::*;
 
 use super::data_structures::*;
@@ -120,11 +121,7 @@ pub fn load_foreign_key_constraints(
     Ok(rows.into_iter().flatten().collect())
 }
 
-// In sqlite the rowid is a signed 64-bit integer.
-// See: https://sqlite.org/rowidtable.html
-// We should use BigInt here but to avoid type problems with foreign keys to
-// rowid columns this is for now not done. A patch can be used after the schema
-// is generated to convert the columns to BigInt as needed.
+// Default to `Integer` so inferred foreign-key types agree.
 const ROWID_TYPE_NAME: &str = "Integer";
 
 pub fn get_table_data(
@@ -133,77 +130,89 @@ pub fn get_table_data(
     column_sorting: &ColumnSorting,
     kind: SupportedQueryRelationStructures,
 ) -> QueryResult<Vec<ColumnInformation>> {
-    let query = if conn.version() >= DatabaseVersion::new(3, 26, 0) {
-        /*
-         * To get generated columns we need to use TABLE_XINFO
-         * This would return hidden columns as well, but those would need to be created at runtime
-         * therefore they aren't an issue.
-         */
-        format!(
-            "PRAGMA TABLE_XINFO('{}')",
-            escape_identifier(&table.sql_name)
-        )
+    let mut columns = if conn.version() >= DatabaseVersion::new(3, 26, 0) {
+        // Generated columns require the extended metadata query.
+        table_xinfo(&table.sql_name, None).load::<TableMetadataColumn>(conn)?
     } else {
-        format!(
-            "PRAGMA TABLE_INFO('{}')",
-            escape_identifier(&table.sql_name)
+        table_info(&table.sql_name, None).load::<TableMetadataColumn>(conn)?
+    };
+    if matches!(kind, SupportedQueryRelationStructures::Table)
+        && !columns.iter().any(|column| column.primary_key)
+        && let Some(alias) = implicit_rowid_alias(
+            columns
+                .iter()
+                .map(|column| column.column_information.column_name.as_str()),
         )
-    };
-
-    // See: https://github.com/diesel-rs/diesel/issues/3579 as to why we use a direct
-    // `sql_query` with `QueryableByName` instead of using `sql::<pragma_table_info::SqlType>`.
-    let mut result = sql_query(query).load::<ColumnInformation>(conn)?;
-    // Add implicit rowid primary key column if the only primary key is rowid
-    // and ensure that the rowid column uses the right type.
-    let primary_key = match kind {
-        SupportedQueryRelationStructures::Table => get_primary_keys(conn, table)?,
-        SupportedQueryRelationStructures::View => Vec::new(),
-    };
-    if primary_key.len() == 1 {
-        let primary_key = primary_key.first().expect("guaranteed to have one element");
-        if !result.iter_mut().any(|x| &x.column_name == primary_key) {
-            // Prepend implicit rowid column for the rowid implicit primary key.
-            result.insert(
-                0,
-                ColumnInformation {
-                    column_name: String::from(primary_key),
-                    type_name: String::from(ROWID_TYPE_NAME),
-                    type_schema: None,
-                    nullable: false,
-                    max_length: None,
-                    comment: None,
-                    auto_increment: false,
-                },
-            );
-        }
+    {
+        columns.insert(
+            0,
+            TableMetadataColumn {
+                column_information: ColumnInformation::new(
+                    alias.to_owned(),
+                    ROWID_TYPE_NAME,
+                    None,
+                    false,
+                    None,
+                    None,
+                    false,
+                ),
+                primary_key: true,
+            },
+        );
     }
 
     match column_sorting {
         ColumnSorting::OrdinalPosition => {}
         ColumnSorting::Name => {
-            result.sort_by(|a: &ColumnInformation, b: &ColumnInformation| {
-                a.column_name.cmp(&b.column_name)
+            columns.sort_by(|a, b| {
+                a.column_information
+                    .column_name
+                    .cmp(&b.column_information.column_name)
             });
         }
     };
-    Ok(result)
+    Ok(columns
+        .into_iter()
+        .map(|column| column.column_information)
+        .collect())
 }
 
-impl QueryableByName<Sqlite> for ColumnInformation {
-    fn build<'a>(row: &impl NamedRow<'a, Sqlite>) -> deserialize::Result<Self> {
-        let column_name = NamedRow::get::<Text, String>(row, "name")?;
-        let type_name = NamedRow::get::<Text, String>(row, "type")?;
-        let notnull = NamedRow::get::<Bool, bool>(row, "notnull")?;
+struct TableMetadataColumn {
+    column_information: ColumnInformation,
+    primary_key: bool,
+}
 
-        Ok(Self::new(
-            column_name,
-            type_name,
-            None,
-            !notnull,
-            None,
-            None,
-            false,
-        ))
+impl TableMetadataColumn {
+    fn decode<'a>(row: &impl Row<'a, Sqlite>) -> deserialize::Result<Self> {
+        let column_name = row.get_value::<Text, String, _>(1)?;
+        let type_name = row.get_value::<Text, String, _>(2)?;
+        let notnull = row.get_value::<Bool, bool, _>(3)?;
+        let primary_key = row.get_value::<Integer, i32, _>(5)? != 0;
+
+        Ok(Self {
+            column_information: ColumnInformation::new(
+                column_name,
+                type_name,
+                None,
+                !notnull,
+                None,
+                None,
+                false,
+            ),
+            primary_key,
+        })
+    }
+}
+
+impl FromSqlRow<TableInfoSqlType, Sqlite> for TableMetadataColumn {
+    fn build_from_row<'a>(row: &impl Row<'a, Sqlite>) -> deserialize::Result<Self> {
+        Self::decode(row)
+    }
+}
+
+impl FromSqlRow<TableXInfoSqlType, Sqlite> for TableMetadataColumn {
+    fn build_from_row<'a>(row: &impl Row<'a, Sqlite>) -> deserialize::Result<Self> {
+        Self::decode(row)
     }
 }
 
@@ -212,12 +221,24 @@ struct PrimaryKeyInformation {
     primary_key: bool,
 }
 
-impl QueryableByName<Sqlite> for PrimaryKeyInformation {
-    fn build<'a>(row: &impl NamedRow<'a, Sqlite>) -> deserialize::Result<Self> {
-        let name = NamedRow::get::<Text, String>(row, "name")?;
-        let primary_key = NamedRow::get::<Bool, bool>(row, "pk")?;
+impl PrimaryKeyInformation {
+    fn decode<'a>(row: &impl Row<'a, Sqlite>) -> deserialize::Result<Self> {
+        Ok(Self {
+            name: row.get_value::<Text, String, _>(1)?,
+            primary_key: row.get_value::<Integer, i32, _>(5)? != 0,
+        })
+    }
+}
 
-        Ok(Self { name, primary_key })
+impl FromSqlRow<TableInfoSqlType, Sqlite> for PrimaryKeyInformation {
+    fn build_from_row<'a>(row: &impl Row<'a, Sqlite>) -> deserialize::Result<Self> {
+        Self::decode(row)
+    }
+}
+
+impl FromSqlRow<TableXInfoSqlType, Sqlite> for PrimaryKeyInformation {
+    fn build_from_row<'a>(row: &impl Row<'a, Sqlite>) -> deserialize::Result<Self> {
+        Self::decode(row)
     }
 }
 
@@ -285,53 +306,42 @@ struct ForeignKeyListRow {
     _match: String,
 }
 
-/// All SQLite rowid aliases
-/// Ordered by preference
-/// https://www.sqlite.org/rowidtable.html
+/// SQLite `rowid` aliases in fallback preference order.
 const SQLITE_ROWID_ALIASES: &[&str] = &["rowid", "oid", "_rowid_"];
 
 pub fn get_primary_keys(
     conn: &mut SqliteConnection,
     table: &TableName,
 ) -> QueryResult<Vec<String>> {
-    let query = if conn.version() >= DatabaseVersion::new(3, 26, 0) {
-        format!(
-            "PRAGMA TABLE_XINFO('{}')",
-            escape_identifier(&table.sql_name)
-        )
+    let results = if conn.version() >= DatabaseVersion::new(3, 26, 0) {
+        table_xinfo(&table.sql_name, None).load::<PrimaryKeyInformation>(conn)?
     } else {
-        format!(
-            "PRAGMA TABLE_INFO('{}')",
-            escape_identifier(&table.sql_name)
-        )
+        table_info(&table.sql_name, None).load::<PrimaryKeyInformation>(conn)?
     };
-    let results = sql_query(query).load::<PrimaryKeyInformation>(conn)?;
-    let mut collected: Vec<String> = results
-        .iter()
-        .filter_map(|i| {
-            if i.primary_key {
-                Some(i.name.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-    // SQLite tables without "WITHOUT ROWID" always have aliases for the implicit PRIMARY KEY "rowid" and its aliases
-    // unless the user defines a column with those names, then the name in question refers to the created column
-    // https://www.sqlite.org/rowidtable.html
-    if collected.is_empty() {
-        for alias in SQLITE_ROWID_ALIASES {
-            if results.iter().any(|v| &v.name.as_str() == alias) {
-                continue;
-            }
-
-            // only add one alias as the primary key
-            collected.push(alias.to_string());
-            break;
-        }
-        // if it is still empty at this point, then a "diesel requires a primary key" error will be given
+    if results.iter().any(|row| row.primary_key) {
+        Ok(results
+            .into_iter()
+            .filter(|row| row.primary_key)
+            .map(|row| row.name)
+            .collect())
+    } else {
+        // Declared columns shadow SQLite's implicit `rowid` aliases.
+        Ok(
+            implicit_rowid_alias(results.iter().map(|row| row.name.as_str()))
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+        )
     }
-    Ok(collected)
+}
+
+fn implicit_rowid_alias<'a>(
+    column_names: impl Iterator<Item = &'a str> + Clone,
+) -> Option<&'static str> {
+    SQLITE_ROWID_ALIASES
+        .iter()
+        .copied()
+        .find(|alias| !column_names.clone().any(|name| name == *alias))
 }
 
 #[tracing::instrument(skip(conn))]
@@ -742,6 +752,110 @@ fn integer_primary_key_sqlite_3_37() {
         assert_eq!(
             (table_name, on_column_types),
             (table_name, expected_on_types)
+        );
+    }
+}
+
+#[test]
+fn metadata_decoders_accept_both_result_shapes() {
+    let mut conn = SqliteConnection::establish(":memory:").unwrap();
+    let has_xinfo = conn.version() >= DatabaseVersion::new(3, 26, 0);
+    let has_generated = conn.version() >= DatabaseVersion::new(3, 31, 0);
+
+    diesel::sql_query(
+        "CREATE TABLE metadata_table (
+            id INTEGER PRIMARY KEY,
+            other_id INTEGER NOT NULL,
+            default_col TEXT DEFAULT 'unused default'
+        )",
+    )
+    .execute(&mut conn)
+    .unwrap();
+    if has_generated {
+        diesel::sql_query(
+            "ALTER TABLE metadata_table ADD COLUMN generated_col INTEGER GENERATED ALWAYS AS (other_id * 2)",
+        )
+        .execute(&mut conn)
+        .unwrap();
+    }
+
+    let expected_columns = [
+        ("id", "INTEGER", true, true),
+        ("other_id", "INTEGER", false, false),
+        ("default_col", "TEXT", true, false),
+        ("generated_col", "INTEGER", true, false),
+    ];
+
+    for (columns, expected) in [
+        Some((
+            table_info("metadata_table", None)
+                .load::<TableMetadataColumn>(&mut conn)
+                .unwrap(),
+            &expected_columns[..3],
+        )),
+        has_xinfo.then(|| {
+            (
+                table_xinfo("metadata_table", None)
+                    .load::<TableMetadataColumn>(&mut conn)
+                    .unwrap(),
+                &expected_columns[..if has_generated { 4 } else { 3 }],
+            )
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        assert_eq!(
+            columns
+                .iter()
+                .map(|column| {
+                    (
+                        column.column_information.column_name.as_str(),
+                        column.column_information.type_name.as_str(),
+                        column.column_information.nullable,
+                        column.primary_key,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            expected,
+        );
+    }
+
+    diesel::sql_query(
+        "CREATE TABLE composite_table (
+            id1 INTEGER,
+            id2 INTEGER,
+            PRIMARY KEY (id2, id1)
+        )",
+    )
+    .execute(&mut conn)
+    .unwrap();
+
+    assert_eq!(
+        get_primary_keys(&mut conn, &TableName::from_name("composite_table")).unwrap(),
+        vec!["id1".to_owned(), "id2".to_owned()],
+    );
+
+    for rows in [
+        Some(
+            table_info("composite_table", None)
+                .load::<PrimaryKeyInformation>(&mut conn)
+                .unwrap(),
+        ),
+        has_xinfo.then(|| {
+            table_xinfo("composite_table", None)
+                .load::<PrimaryKeyInformation>(&mut conn)
+                .unwrap()
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.name.as_str(), row.primary_key))
+                .collect::<Vec<_>>(),
+            [("id1", true), ("id2", true)],
         );
     }
 }

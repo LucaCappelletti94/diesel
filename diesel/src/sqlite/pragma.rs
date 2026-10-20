@@ -82,6 +82,8 @@
 //! # }
 //! ```
 
+mod table_metadata;
+
 use crate::connection::{DefaultLoadingMode, LoadConnection};
 use crate::deserialize::FromSqlRow;
 use crate::expression::QueryMetadata;
@@ -89,11 +91,16 @@ use crate::query_builder::{AstPass, Query, QueryFragment, QueryId};
 use crate::query_dsl::RunQueryDslSupport;
 use crate::result::{Error, QueryResult};
 use crate::row::Row;
-use crate::sql_types::{Bool, Integer, Nullable, SqlType, Text};
+use crate::sql_types::SqlType;
 use crate::sqlite::{AutoVacuumMode, Sqlite, SqliteConnection};
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
+
+pub use table_metadata::{
+    TableColumnInfo, TableColumnKind, TableInfoQuery, TableInfoSqlType, TableXInfoQuery,
+    TableXInfoSqlType, table_info, table_xinfo,
+};
 
 /// A pragma, named by [`NAME`](Self::NAME) and scoped by [`Scope`](Self::Scope).
 pub trait Pragma: Sized {
@@ -228,49 +235,6 @@ pub trait ConnectionPragma: Pragma<Scope = PerConnection> {
 }
 
 impl<P: Pragma<Scope = PerConnection>> ConnectionPragma for P {}
-
-/// SQL types of `(cid, name, type, notnull, dflt_value, pk)`, where `pk` is the primary-key ordinal or zero.
-pub type TableInfoSqlType = (Integer, Text, Text, Bool, Nullable<Text>, Integer);
-
-/// A query for ordinary columns from `PRAGMA table_info`.
-#[derive(Debug)]
-pub struct TableInfoQuery<'a> {
-    query: PragmaQuery<'a, TableInfoPragma>,
-}
-
-/// Reads column metadata for `table`, leaving SQLite's schema lookup unqualified when `schema` is `None`.
-pub fn table_info<'a>(table: &'a str, schema: Option<&'a str>) -> TableInfoQuery<'a> {
-    TableInfoQuery {
-        query: PragmaQuery::new(schema, Some(PragmaLiteral::Text(table))),
-    }
-}
-
-impl QueryFragment<Sqlite> for TableInfoQuery<'_> {
-    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
-        out.unsafe_to_cache_prepared();
-        self.query.walk_ast(out)
-    }
-}
-
-impl Query for TableInfoQuery<'_> {
-    type SqlType = TableInfoSqlType;
-}
-
-impl QueryId for TableInfoQuery<'_> {
-    type QueryId = ();
-
-    const HAS_STATIC_QUERY_ID: bool = false;
-}
-
-impl RunQueryDslSupport for TableInfoQuery<'_> {}
-
-#[derive(Debug)]
-struct TableInfoPragma;
-
-impl Pragma for TableInfoPragma {
-    const NAME: &'static str = "table_info";
-    type Scope = PerSchema;
-}
 
 /// `PRAGMA auto_vacuum`, read as an [`AutoVacuumMode`] and set to the one it carries.
 pub(crate) struct AutoVacuum(pub(crate) AutoVacuumMode);

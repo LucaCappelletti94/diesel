@@ -1,12 +1,15 @@
-use diesel::connection::{Connection, InstrumentationEvent, SimpleConnection};
+use diesel::connection::{Connection, DatabaseVersion, InstrumentationEvent, SimpleConnection};
+use diesel::query_builder::QueryBuilder;
 use diesel::query_dsl::RunQueryDsl;
 use diesel::result::Error;
 use diesel::sql_types::{Bool, Integer, Text};
 use diesel::sqlite::pragma::{
     ConnectionPragma, PerConnection, PerSchema, Pragma, PragmaLiteral, ReadPragma, SchemaPragma,
-    WritePragma, table_info,
+    TableColumnInfo, TableColumnKind, WritePragma, table_info, table_xinfo,
 };
-use diesel::sqlite::{AuthorizerContext, AuthorizerDecision, ProgressDecision, SqliteConnection};
+use diesel::sqlite::{
+    AuthorizerContext, AuthorizerDecision, ProgressDecision, SqliteConnection, SqliteQueryBuilder,
+};
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 
@@ -418,4 +421,86 @@ fn table_info_preserves_schema_resolution() {
             [expected],
         );
     }
+}
+
+#[diesel_test_helper::test]
+fn metadata_queries_quote_borrowed_table_names() {
+    let conn = &mut connection();
+    conn.attach_database(":memory:", "a`ux").unwrap();
+    let has_xinfo = conn.version() >= DatabaseVersion::new(3, 26, 0);
+    conn.set_instrumentation(|event: InstrumentationEvent<'_>| {
+        assert!(!matches!(event, InstrumentationEvent::CacheQuery { .. }));
+    });
+    let names = [
+        "",
+        "book's metadata",
+        "first''last",
+        "trailing'",
+        "tick`name",
+        "double\"quote",
+        "données_雪",
+        "line\\\n\ré雪",
+        "'; PRAGMA main.user_version = 7; --",
+    ];
+    for (schema, marker) in [("main", "main_marker"), ("a`ux", "aux_marker")] {
+        for name in names {
+            let table = name.to_owned();
+            let mut query = SqliteQueryBuilder::new();
+            query.push_sql("CREATE TABLE ");
+            query.push_identifier(schema).unwrap();
+            query.push_sql(".");
+            query.push_identifier(&table).unwrap();
+            query.push_sql(" (id INTEGER PRIMARY KEY, ");
+            query.push_identifier(marker).unwrap();
+            query.push_sql(" TEXT NOT NULL DEFAULT 'seed')");
+            conn.batch_execute(&query.finish()).unwrap();
+
+            for columns in [
+                Some(table_info(&table, Some(schema)).load::<TableColumnInfo>(conn)),
+                has_xinfo.then(|| table_xinfo(&table, Some(schema)).load::<TableColumnInfo>(conn)),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let columns = columns.unwrap();
+                assert_eq!(
+                    columns
+                        .iter()
+                        .map(|column| (
+                            column.name.as_str(),
+                            column.type_name.as_str(),
+                            column.kind,
+                        ))
+                        .collect::<Vec<_>>(),
+                    [
+                        ("id", "INTEGER", TableColumnKind::Normal),
+                        (marker, "TEXT", TableColumnKind::Normal),
+                    ],
+                );
+                assert_eq!(columns[0].cid, 0);
+                assert_eq!(columns[0].primary_key_position, NonZeroU32::new(1));
+                assert!(!columns[0].not_null);
+                assert_eq!(columns[0].default_value, None);
+                assert_eq!(columns[1].cid, 1);
+                assert_eq!(columns[1].primary_key_position, None);
+                assert!(columns[1].not_null);
+                assert_eq!(columns[1].default_value.as_deref(), Some("'seed'"));
+            }
+        }
+    }
+    conn.set_instrumentation(|_: InstrumentationEvent<'_>| {});
+    assert_eq!(UserVersion::get(conn, None).unwrap(), 0);
+}
+
+#[diesel_test_helper::test]
+fn metadata_table_name_with_nul_is_rejected_before_execution() {
+    let conn = &mut connection();
+    let value = String::from("text\0'; PRAGMA main.user_version = 7; --");
+    for result in [
+        table_info(&value, None).load::<TableColumnInfo>(conn),
+        table_xinfo(&value, None).load::<TableColumnInfo>(conn),
+    ] {
+        assert!(matches!(result, Err(Error::InvalidCString(_))));
+    }
+    assert_eq!(UserVersion::get(conn, None).unwrap(), 0);
 }
