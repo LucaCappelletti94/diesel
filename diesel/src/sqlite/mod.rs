@@ -44,6 +44,9 @@ pub use self::connection::{
 pub use self::connection::{
     SqliteChangeEvent, SqliteChangeOp, SqliteChangeOps, SqliteUpdateRouter,
 };
+pub use self::connection::{
+    SqliteFunctionArguments, SqliteTableFunctionRow, register_dynamic_table_function,
+};
 #[cfg(feature = "__sqlite-shared")]
 pub use self::function_behavior::SqliteFunctionBehavior;
 pub use self::query_builder::SqliteQueryBuilder;

@@ -1,0 +1,201 @@
+---
+source: diesel_derives/src/tests/mod.rs
+expression: out
+info:
+  input: "#[diesel::declare_sql_function]\nextern \"SQL\" {\n    #[query_source(other_crate::views::grantees)]\n    fn grantees(role: Text) -> other_crate::views::grantees::SqlType;\n}\n"
+---
+#[allow(non_camel_case_types)]
+pub fn grantees<role>(
+    role: role,
+) -> diesel::query_source::FunctionCall<
+    other_crate::views::grantees::view,
+    grantees_utils::grantees<
+        <role as diesel::expression::AsExpression<Text>>::Expression,
+    >,
+>
+where
+    role: diesel::expression::AsExpression<Text>,
+{
+    diesel::query_source::FunctionCall::new(grantees_utils::grantees {
+        role: role.as_expression(),
+        param_role: diesel::internal::sql_functions::FunctionParameter {
+            name: stringify!(role),
+        },
+    })
+}
+#[allow(non_camel_case_types)]
+impl<role> diesel::expression::Expression for grantees_utils::grantees<role>
+where
+    (role): diesel::expression::Expression,
+{
+    type SqlType = other_crate::views::grantees::SqlType;
+}
+#[allow(non_camel_case_types)]
+impl<role> diesel::internal::table_functions::TableFunction
+for grantees_utils::grantees<role> {
+    type Relation = other_crate::views::grantees::view;
+    type ColumnAliases = diesel::internal::table_functions::NoColumnAliases;
+}
+const _: () = {
+    #[allow(dead_code)]
+    fn __diesel_the_return_type_is_the_sql_type_of_the_relation() {
+        let _: ::core::marker::PhantomData<
+            <other_crate::views::grantees::view as diesel::query_builder::AsQuery>::SqlType,
+        > = ::core::marker::PhantomData::<other_crate::views::grantees::SqlType>;
+    }
+};
+#[doc(hidden)]
+#[allow(non_camel_case_types, non_snake_case, unused_imports)]
+pub(crate) mod grantees_utils {
+    use diesel::{self, QueryResult};
+    use diesel::expression::{
+        AsExpression, Expression, SelectableExpression, AppearsOnTable, ValidGrouping,
+    };
+    use diesel::query_builder::{QueryFragment, AstPass};
+    use diesel::sql_types::*;
+    use diesel::internal::sql_functions::*;
+    use super::*;
+    #[derive(Debug, Clone, Copy, diesel::query_builder::QueryId)]
+    pub struct grantees<role> {
+        pub(super) role: role,
+        pub(super) param_role: FunctionParameter<false>,
+    }
+    ///The return type of [`grantees()`](fn@grantees)
+    pub type HelperType<role> = grantees<<role as AsExpression<Text>>::Expression>;
+    impl<role, __DieselInternal> SelectableExpression<__DieselInternal>
+    for grantees<role>
+    where
+        role: SelectableExpression<__DieselInternal>,
+        Self: AppearsOnTable<__DieselInternal>,
+    {}
+    impl<role, __DieselInternal> AppearsOnTable<__DieselInternal> for grantees<role>
+    where
+        role: AppearsOnTable<__DieselInternal>,
+        Self: Expression,
+    {}
+    impl<role, __DieselInternal> FunctionFragment<__DieselInternal> for grantees<role>
+    where
+        __DieselInternal: diesel::backend::Backend,
+        FunctionParameter<
+            false,
+        >: QueryFragment<
+            __DieselInternal,
+            <__DieselInternal as diesel::backend::SqlDialect>::SqlFunctionParameterNotation,
+        >,
+        role: QueryFragment<__DieselInternal>,
+    {
+        const FUNCTION_NAME: &'static str = "grantees";
+        #[allow(unused_assignments)]
+        fn walk_arguments<'__b>(
+            &'__b self,
+            mut out: AstPass<'_, '__b, __DieselInternal>,
+        ) -> QueryResult<()> {
+            let mut needs_comma = false;
+            if !self.role.is_noop(out.backend())? {
+                if needs_comma {
+                    out.push_sql(", ");
+                }
+                self.param_role.walk_ast(out.reborrow())?;
+                self.role.walk_ast(out.reborrow())?;
+                needs_comma = true;
+            }
+            Ok(())
+        }
+    }
+    impl<role, __DieselInternal> QueryFragment<__DieselInternal> for grantees<role>
+    where
+        __DieselInternal: diesel::backend::Backend,
+        FunctionParameter<
+            false,
+        >: QueryFragment<
+            __DieselInternal,
+            <__DieselInternal as diesel::backend::SqlDialect>::SqlFunctionParameterNotation,
+        >,
+        role: QueryFragment<__DieselInternal>,
+    {
+        fn walk_ast<'__b>(
+            &'__b self,
+            mut out: AstPass<'_, '__b, __DieselInternal>,
+        ) -> QueryResult<()> {
+            out.push_sql(<Self as FunctionFragment<__DieselInternal>>::FUNCTION_NAME);
+            out.push_sql("(");
+            self.walk_arguments(out.reborrow())?;
+            out.push_sql(")");
+            Ok(())
+        }
+    }
+    #[derive(ValidGrouping)]
+    pub struct __Derived<role>(role);
+    impl<role, __DieselInternal> ValidGrouping<__DieselInternal> for grantees<role>
+    where
+        __Derived<role>: ValidGrouping<__DieselInternal>,
+    {
+        type IsAggregate = <__Derived<
+            role,
+        > as ValidGrouping<__DieselInternal>>::IsAggregate;
+    }
+    /// Registers this table function with empty behavior flags.
+    pub fn register_impl<__DieselF, __DieselRows, role>(
+        __diesel_connection: &mut diesel::sqlite::SqliteConnection,
+        __diesel_function: __DieselF,
+    ) -> diesel::result::QueryResult<()>
+    where
+        __DieselF: Fn(
+                &mut diesel::sqlite::BorrowedSqliteConnection,
+                role,
+            ) -> diesel::result::QueryResult<__DieselRows> + Send
+            + ::core::panic::UnwindSafe + 'static,
+        __DieselRows: IntoIterator,
+        __DieselRows::Item: diesel::sqlite::SqliteTableFunctionRow<
+            <<grantees<
+                Text,
+            > as diesel::internal::table_functions::TableFunction>::Relation as diesel::query_builder::AsQuery>::SqlType,
+        >,
+        (role,): diesel::internal::table_functions::SqliteTableFunctionArgs<(Text,)>,
+    {
+        register_impl_with_behavior(
+            __diesel_connection,
+            diesel::sqlite::SqliteFunctionBehavior::empty(),
+            __diesel_function,
+        )
+    }
+    /// Registers this table function with the specified behavior flags.
+    pub fn register_impl_with_behavior<__DieselF, __DieselRows, role>(
+        __diesel_connection: &mut diesel::sqlite::SqliteConnection,
+        __diesel_behavior: diesel::sqlite::SqliteFunctionBehavior,
+        __diesel_function: __DieselF,
+    ) -> diesel::result::QueryResult<()>
+    where
+        __DieselF: Fn(
+                &mut diesel::sqlite::BorrowedSqliteConnection,
+                role,
+            ) -> diesel::result::QueryResult<__DieselRows> + Send
+            + ::core::panic::UnwindSafe + 'static,
+        __DieselRows: IntoIterator,
+        __DieselRows::Item: diesel::sqlite::SqliteTableFunctionRow<
+            <<grantees<
+                Text,
+            > as diesel::internal::table_functions::TableFunction>::Relation as diesel::query_builder::AsQuery>::SqlType,
+        >,
+        (role,): diesel::internal::table_functions::SqliteTableFunctionArgs<(Text,)>,
+    {
+        diesel::internal::table_functions::register_table_function::<
+            <grantees<
+                Text,
+            > as diesel::internal::table_functions::TableFunction>::Relation,
+            (Text,),
+            (role,),
+            __DieselRows,
+            _,
+        >(
+            __diesel_connection,
+            "grantees",
+            &["role"],
+            __diesel_behavior,
+            move |__diesel_connection, (role,)| __diesel_function(
+                __diesel_connection,
+                role,
+            ),
+        )
+    }
+}
