@@ -16,8 +16,8 @@ LL |     impl MixedAggregates<No> for No {
 ...
 LL |     impl MixedAggregates<Never> for No {
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MixedAggregates<diesel::expression::is_aggregate::Never>`
-    = note: required for `(columns::id, diesel::dsl::CountStar)` to implement `ValidGrouping<()>`
-    = note: required for `SelectStatement<FromClause<table>>` to implement `SelectDsl<(columns::id, diesel::dsl::CountStar)>`
+    = note: required for `(users::columns::id, diesel::dsl::CountStar)` to implement `ValidGrouping<()>`
+    = note: required for `SelectStatement<FromClause<table>>` to implement `SelectDsl<(users::columns::id, diesel::dsl::CountStar)>`
  
     
 error[E0277]: mixing aggregate and not aggregate expressions is not allowed in SQL

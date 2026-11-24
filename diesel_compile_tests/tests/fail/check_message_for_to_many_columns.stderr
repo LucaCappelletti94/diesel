@@ -1,4 +1,4 @@
-error[E0277]: cannot select `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)` from `table`
+error[E0277]: cannot select `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)` from `test_table::table`
   --> tests/fail/check_message_for_to_many_columns.rs:3:1
    |
  LL | / table! {
@@ -9,8 +9,8 @@ error[E0277]: cannot select `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)
 LL | | }
    | |_^ unsatisfied trait bound
    |
-   = help: the trait `SelectableExpression<table>` is not implemented for `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)`
-   = note: `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)` is no valid selection for `table`
+   = help: the trait `SelectableExpression<test_table::table>` is not implemented for `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)`
+   = note: `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)` is no valid selection for `test_table::table`
    = help: the following other types implement trait `SelectableExpression<QS>`:
              (T₁, T₂, …, Tₙ) for tuples of arity 1 up to and including 16
            and N others
@@ -73,14 +73,14 @@ error[E0277]: the trait bound `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, 
 note: required by a bound in `diesel::Table::AllColumns`
    --> ROOT/diesel/src/query_source/mod.rs
     |
- LL | pub trait Table: QuerySource + AsQuery + Sized {
+LL | pub trait Table: QuerySource + AsQuery + Sized {
 ...
 LL |     type AllColumns: SelectableExpression<Self> + ValidGrouping<()>;
     |                                                   ^^^^^^^^^^^^^^^^^ required by this bound in `Table::AllColumns`
  
         = note: this error originates in the macro `table` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: cannot select `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)` from `table`
+error[E0277]: cannot select `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)` from `test_table::table`
    --> tests/fail/check_message_for_to_many_columns.rs:3:1
     |
   LL | / table! {
@@ -91,15 +91,15 @@ error[E0277]: cannot select `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)
  LL | | }
     | |_^ unsatisfied trait bound
     |
-    = help: the trait `SelectableExpression<table>` is not implemented for `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)`
-    = note: `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)` is no valid selection for `table`
+    = help: the trait `SelectableExpression<test_table::table>` is not implemented for `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)`
+    = note: `(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)` is no valid selection for `test_table::table`
     = help: the following other types implement trait `SelectableExpression<QS>`:
               (T₁, T₂, …, Tₙ) for tuples of arity 1 up to and including 16
             and N others
 note: required by a bound in `diesel::Table::AllColumns`
    --> ROOT/diesel/src/query_source/mod.rs
     |
- LL | pub trait Table: QuerySource + AsQuery + Sized {
+LL | pub trait Table: QuerySource + AsQuery + Sized {
 ...
 LL |     type AllColumns: SelectableExpression<Self> + ValidGrouping<()>;
     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Table::AllColumns`

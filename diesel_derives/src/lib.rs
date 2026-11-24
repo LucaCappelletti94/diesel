@@ -1519,6 +1519,9 @@ pub fn table_proc(input: TokenStream) -> TokenStream {
 /// If you are using `diesel print-schema`, an invocation of
 /// this macro will be generated for you for all tables in your schema.
 ///
+/// Separate local tables from relations owned by another crate with a semicolon, as in `allow_tables_to_appear_in_same_query!(users; diesel::pg::table_functions::json_each, diesel::pg::table_functions::jsonb_each)`.
+/// This form pairs each relation before the semicolon with each relation after it, without adding pairs within either list.
+///
 /// # Example
 ///
 /// ```
@@ -2317,6 +2320,10 @@ const AUTO_TYPE_DEFAULT_FUNCTION_TYPE_CASE: dsl_auto_type::Case = dsl_auto_type:
 /// `#[query_source(relation, base_type)]` with a relation of exactly one column.
 /// On PostgreSQL the call then renders that column's name as a column alias,
 /// `generate_series($1, $2) AS "series"("value")`.
+///
+/// A polymorphic declaration may name a generic parameter with `#[query_source(R)]` and return `R::SqlType`.
+/// Bound `R` by `diesel::query_source::TableFunctionRelation`, or by `diesel::query_source::SingleColumnRelation<ColumnSqlType = ST>` for a single-column result linked to an argument's SQL type `ST`.
+/// The return type helper takes the relation explicitly before its argument types.
 ///
 /// The arguments of a call must not read columns of other tables or aggregate
 /// rows. Joining a call to a table requires listing its view in

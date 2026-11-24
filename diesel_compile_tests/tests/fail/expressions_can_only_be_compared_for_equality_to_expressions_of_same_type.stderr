@@ -6,19 +6,20 @@ LL |     let pred = id.eq("string");
    |
    = help: `&str` implements trait `AsExpression<T>`:
              AsExpression<Citext>
+             AsExpression<Jsonpath>
              AsExpression<diesel::sql_types::Bpchar>
              AsExpression<diesel::sql_types::Date>
              AsExpression<diesel::sql_types::Text>
              AsExpression<diesel::sql_types::Time>
              AsExpression<diesel::sql_types::Timestamp>
 
-error[E0277]: the trait bound `columns::name: AsExpression<diesel::sql_types::Integer>` is not satisfied
+error[E0277]: the trait bound `users::columns::name: AsExpression<diesel::sql_types::Integer>` is not satisfied
   --> tests/fail/expressions_can_only_be_compared_for_equality_to_expressions_of_same_type.rs:17:19
    |
 LL |     let pred = id.eq(name);
    |                   ^^ unsatisfied trait bound
    |
-help: the trait `AsExpression<diesel::sql_types::Integer>` is not implemented for `columns::name`
+help: the trait `AsExpression<diesel::sql_types::Integer>` is not implemented for `users::columns::name`
   --> tests/fail/expressions_can_only_be_compared_for_equality_to_expressions_of_same_type.rs:8:9
    |
  LL |         name -> VarChar,

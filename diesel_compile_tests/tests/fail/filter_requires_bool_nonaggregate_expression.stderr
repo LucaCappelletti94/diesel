@@ -12,7 +12,7 @@ LL | impl BoolOrNullableBool for Bool {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `diesel::sql_types::Bool`
 LL | impl BoolOrNullableBool for Nullable<Bool> {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Nullable<diesel::sql_types::Bool>`
-    = note: required for `SelectStatement<FromClause<table>>` to implement `FilterDsl<columns::name>`
+    = note: required for `SelectStatement<FromClause<table>>` to implement `FilterDsl<users::columns::name>`
  
     
 error[E0277]: mixing aggregate and not aggregate expressions is not allowed in SQL

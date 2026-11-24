@@ -69,7 +69,7 @@ LL |     impl MixedAggregates<No> for No {
 LL |     impl MixedAggregates<Never> for No {
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MixedAggregates<diesel::expression::is_aggregate::Never>`
     = note: required for `(user_id, count<Integer, id>)` to implement `ValidGrouping<()>`
-    = note: required for `DistinctOnClause<columns::user_id>` to implement `ValidDistinctForGroupBy<count<Integer, id>, ()>`
+    = note: required for `DistinctOnClause<posts::columns::user_id>` to implement `ValidDistinctForGroupBy<count<Integer, id>, ()>`
     = note: required for `SelectStatement<FromClause<table>, _, _>` to implement `SelectDsl<count<Integer, id>>`
  
     
@@ -92,7 +92,7 @@ LL |     impl MixedAggregates<No> for No {
 LL |     impl MixedAggregates<Never> for No {
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MixedAggregates<diesel::expression::is_aggregate::Never>`
     = note: required for `(user_id, count<Integer, id>)` to implement `ValidGrouping<()>`
-    = note: required for `SelectStatement<FromClause<table>, _>` to implement `DistinctOnDsl<columns::user_id>`
+    = note: required for `SelectStatement<FromClause<table>, _>` to implement `DistinctOnDsl<posts::columns::user_id>`
  
     
 error[E0277]: the trait bound `SelectStatement<_, _, _>: SelectDsl<_>` is not satisfied
@@ -142,7 +142,7 @@ LL |     impl MixedAggregates<No> for No {
 ...
 LL |     impl MixedAggregates<Never> for No {
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MixedAggregates<diesel::expression::is_aggregate::Never>`
-    = note: required for `(columns::user_id, diesel::dsl::CountStar)` to implement `ValidGrouping<()>`
-    = note: required for `SelectStatement<FromClause<table>, _>` to implement `DistinctOnDsl<columns::user_id>`
+    = note: required for `(posts::columns::user_id, diesel::dsl::CountStar)` to implement `ValidGrouping<()>`
+    = note: required for `SelectStatement<FromClause<table>, _>` to implement `DistinctOnDsl<posts::columns::user_id>`
  
     For more information about this error, try `rustc --explain E0277`.

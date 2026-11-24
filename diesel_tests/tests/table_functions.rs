@@ -194,6 +194,25 @@ mod sqlite {
         fn generate_series(start: Integer, stop: Integer) -> series::SqlType;
     }
 
+    #[diesel::declare_sql_function(generate_return_type_helpers = true)]
+    extern "SQL" {
+        #[sql_name = "json_each"]
+        #[query_source(R)]
+        fn generic_json_each<R: diesel::query_source::TableFunctionRelation>(
+            document: Text,
+        ) -> R::SqlType;
+    }
+
+    #[diesel_test_helper::test]
+    fn a_generic_relation_loads_the_declared_columns() {
+        let connection = &mut connection();
+        let rows = generic_json_each::<json_each::view, _>(r#"["first","second"]"#)
+            .select(json_each::value)
+            .load::<String>(connection)
+            .unwrap();
+        assert_eq!(rows, vec!["first", "second"]);
+    }
+
     #[diesel_test_helper::test]
     fn a_call_renders_as_a_from_item_named_after_its_relation() {
         let query = json_each(r#"["a"]"#).select(json_each::value);

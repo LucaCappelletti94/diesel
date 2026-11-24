@@ -12,7 +12,7 @@ error[E0277]: the trait bound `dyn BoxableExpression<table, Pg, SqlType = _>: Va
   LL |         .select(some_ungrouped_expression(true))
      |          ^^^^^^ unsatisfied trait bound
      |
-     = help: the trait `ValidGrouping<columns::id>` is not implemented for `dyn BoxableExpression<table, Pg, SqlType = _>`
+     = help: the trait `ValidGrouping<users::columns::id>` is not implemented for `dyn BoxableExpression<table, Pg, SqlType = _>`
 help: the following other types implement trait `ValidGrouping<GroupByClause>`
     --> ROOT/diesel/src/expression/mod.rs
      |
@@ -31,7 +31,7 @@ LL | |     for dyn BoxableExpression<QS, DB, GB, IsAggregate, SqlType = ST> + Se
 LL | / impl<QS, ST, DB, IsAggregate, From> ValidGrouping<subselect::SubselectGroupBy<(), From>>
 LL | |     for dyn BoxableExpression<QS, DB, (), IsAggregate, SqlType = ST> + Send + Sync + '_
      | |_______________________________________________________________________________________^ `dyn BoxableExpression<QS, DB, (), IsAggregate, SqlType = ST> + Send + Sync` implements `ValidGrouping<SubselectGroupBy<(), From>>`
-     = note: required for `Box<dyn BoxableExpression<table, Pg, SqlType = _>>` to implement `ValidGrouping<columns::id>`
+     = note: required for `Box<dyn BoxableExpression<table, Pg, SqlType = _>>` to implement `ValidGrouping<users::columns::id>`
      = note: required for `SelectStatement<_, _, _, _, _, _, _>` to implement `SelectDsl<Box<_>>`
   
      
@@ -43,7 +43,7 @@ error[E0277]: the trait bound `dyn BoxableExpression<table, Pg, SqlType = _>: Va
      |          |
      |          required by a bound introduced by this call
      |
-     = help: the trait `ValidGrouping<columns::id>` is not implemented for `dyn BoxableExpression<table, Pg, SqlType = _>`
+     = help: the trait `ValidGrouping<users::columns::id>` is not implemented for `dyn BoxableExpression<table, Pg, SqlType = _>`
 help: the following other types implement trait `ValidGrouping<GroupByClause>`
     --> ROOT/diesel/src/expression/mod.rs
      |
@@ -62,7 +62,7 @@ LL | |     for dyn BoxableExpression<QS, DB, GB, IsAggregate, SqlType = ST> + Se
 LL | / impl<QS, ST, DB, IsAggregate, From> ValidGrouping<subselect::SubselectGroupBy<(), From>>
 LL | |     for dyn BoxableExpression<QS, DB, (), IsAggregate, SqlType = ST> + Send + Sync + '_
      | |_______________________________________________________________________________________^ `dyn BoxableExpression<QS, DB, (), IsAggregate, SqlType = ST> + Send + Sync` implements `ValidGrouping<SubselectGroupBy<(), From>>`
-     = note: required for `Box<dyn BoxableExpression<table, Pg, SqlType = _>>` to implement `ValidGrouping<columns::id>`
+     = note: required for `Box<dyn BoxableExpression<table, Pg, SqlType = _>>` to implement `ValidGrouping<users::columns::id>`
      = note: required for `SelectStatement<_, _, _, _, _, _, _>` to implement `Query`
      = note: required for `SelectStatement<_, _, _, _, _, _, _>` to implement `LoadQuery<'_, _, i32>`
 note: required by a bound in `load`
@@ -92,7 +92,7 @@ LL | |         name -> Text,
 LL | |     }
 LL | | }
    | |_^
-note: required for `columns::id` to implement `ValidGrouping<columns::name>`
+note: required for `users::columns::id` to implement `ValidGrouping<users::columns::name>`
   --> tests/fail/valid_grouping_and_boxed_expressions.rs:11:9
    |
 LL |         id -> Integer,

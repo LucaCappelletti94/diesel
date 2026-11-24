@@ -6,13 +6,13 @@ LL |     users::table.select(lag(users::name));
    |
    = help: the following other types implement trait `ValidGrouping<GroupByClause>`:
              AliasedField<S, C>
-             columns::id
-             columns::name
-             diesel::mariadb::returning::old_impl::OldValue<C>
-             diesel::pg::returning::old_impl::Old<C>
-             pg::metadata_lookup::pg_namespace::columns::nspname
-             pg::metadata_lookup::pg_namespace::columns::oid
-             pg::metadata_lookup::pg_type::columns::oid
+             baredesc
+             barelabel
+             builtin
+             catcode
+             catdesc
+             coll
+             compile_options
            and N others
    = note: required for `SelectStatement<FromClause<table>>` to implement `SelectDsl<lag<Text, name>>`
 
@@ -26,13 +26,13 @@ LL |     users::table.select(rank());
    = help: the trait `ValidGrouping<()>` is not implemented for `diesel::expression::functions::window_functions::rank_utils::rank`
    = help: the following other types implement trait `ValidGrouping<GroupByClause>`:
              AliasedField<S, C>
-             columns::id
-             columns::name
-             diesel::mariadb::returning::old_impl::OldValue<C>
-             diesel::pg::returning::old_impl::Old<C>
-             pg::metadata_lookup::pg_namespace::columns::nspname
-             pg::metadata_lookup::pg_namespace::columns::oid
-             pg::metadata_lookup::pg_type::columns::oid
+             baredesc
+             barelabel
+             builtin
+             catcode
+             catdesc
+             coll
+             compile_options
            and N others
    = note: required for `SelectStatement<FromClause<table>>` to implement `SelectDsl<rank>`
 

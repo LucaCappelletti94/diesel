@@ -31,13 +31,13 @@ LL |         .select(json_each("[]"))
    = help: the trait `ValidGrouping<()>` is not implemented for `FunctionCall<view, json_each<Bound<Text, &str>>>`
    = help: the following other types implement trait `ValidGrouping<GroupByClause>`:
              AliasedField<S, C>
-             diesel::mariadb::returning::old_impl::OldValue<C>
-             diesel::pg::returning::old_impl::Old<C>
-             json_each::columns::value
-             pg::metadata_lookup::pg_namespace::columns::nspname
-             pg::metadata_lookup::pg_namespace::columns::oid
-             pg::metadata_lookup::pg_type::columns::oid
-             pg::metadata_lookup::pg_type::columns::typarray
+             baredesc
+             barelabel
+             builtin
+             catcode
+             catdesc
+             coll
+             compile_options
            and N others
    = note: required for `SelectStatement<FromClause<table>>` to implement `SelectDsl<FunctionCall<view, json_each<_>>>`
 
@@ -90,13 +90,13 @@ error[E0277]: the trait bound `FunctionCall<view, _>: ValidGrouping<()>` is not 
      = help: the trait `ValidGrouping<()>` is not implemented for `FunctionCall<view, json_each<Bound<Text, &str>>>`
      = help: the following other types implement trait `ValidGrouping<GroupByClause>`:
                AliasedField<S, C>
-               diesel::mariadb::returning::old_impl::OldValue<C>
-               diesel::pg::returning::old_impl::Old<C>
-               json_each::columns::value
-               pg::metadata_lookup::pg_namespace::columns::nspname
-               pg::metadata_lookup::pg_namespace::columns::oid
-               pg::metadata_lookup::pg_type::columns::oid
-               pg::metadata_lookup::pg_type::columns::typarray
+               baredesc
+               barelabel
+               builtin
+               catcode
+               catdesc
+               coll
+               compile_options
              and N others
      = note: required for `SelectStatement<FromClause<table>, _>` to implement `Query`
      = note: required for `SelectStatement<FromClause<table>, _>` to implement `LoadQuery<'_, _, std::string::String>`

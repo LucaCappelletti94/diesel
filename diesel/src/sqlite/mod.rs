@@ -10,6 +10,7 @@ pub(crate) mod connection;
 pub mod expression;
 mod function_behavior;
 pub mod pragma;
+pub mod table_functions;
 
 pub mod query_builder;
 

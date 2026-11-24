@@ -14,15 +14,15 @@ note: expected this to be `diesel::expression::is_contained_in_group_by::Yes`
 LL | |     }
 LL | | }
    | |_^
-note: required for `columns::id` to implement `ValidGrouping<columns::name>`
+note: required for `users::columns::id` to implement `ValidGrouping<users::columns::name>`
   --> tests/fail/alias_and_group_by.rs:8:9
    |
  LL |         id -> Integer,
    |         ^^
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: 1 redundant requirement hidden
-   = note: required for `AliasedField<user1, columns::id>` to implement `ValidGrouping<AliasedField<user1, columns::name>>`
-   = note: required for `SelectStatement<_, _, _, _, _, _, _>` to implement `SelectDsl<AliasedField<user1, columns::id>>`
+   = note: required for `AliasedField<user1, users::columns::id>` to implement `ValidGrouping<AliasedField<user1, users::columns::name>>`
+   = note: required for `SelectStatement<_, _, _, _, _, _, _>` to implement `SelectDsl<AliasedField<user1, users::columns::id>>`
 
       = note: this error originates in the macro `table` (in Nightly builds, run with -Z macro-backtrace for more info)
 For more information about this error, try `rustc --explain E0271`.

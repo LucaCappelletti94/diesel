@@ -1,4 +1,4 @@
-error[E0277]: cannot select `diesel::mariadb::returning::old_impl::OldValue<columns::name>` from `ReturningQuerySource<_, table>`
+error[E0277]: cannot select `OldValue<name>` from `ReturningQuerySource<_, table>`
    --> tests/fail/mariadb_does_not_support_old_in_insert_on_conflict_do_update.rs:35:20
     |
  LL |         .returning(UpsertOldNew::as_select())
@@ -6,8 +6,8 @@ error[E0277]: cannot select `diesel::mariadb::returning::old_impl::OldValue<colu
     |          |
     |          required by a bound introduced by this call
     |
-    = note: `diesel::mariadb::returning::old_impl::OldValue<columns::name>` is no valid selection for `ReturningQuerySource<_, table>`
-help: the trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::InsertStmtWithOnConflictDoUpdate, _>>` is not implemented for `diesel::mariadb::returning::old_impl::OldValue<columns::name>`
+    = note: `OldValue<name>` is no valid selection for `ReturningQuerySource<_, table>`
+help: the trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::InsertStmtWithOnConflictDoUpdate, _>>` is not implemented for `OldValue<name>`
       but trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::UpdateStmt, _>>` is implemented for it
    --> ROOT/diesel/src/mariadb/returning/old_impl.rs
     |
@@ -32,7 +32,7 @@ LL |         InsertStatement<T, U, Op, ReturningClause<E>>: Query,
     |                                                        ^^^^^ required by this bound in `InsertStatement::<T, U, Op>::returning`
  
     
-error[E0277]: cannot select `diesel::mariadb::returning::old_impl::OldValue<columns::name>` from `ReturningQuerySource<_, table>`
+error[E0277]: cannot select `OldValue<name>` from `ReturningQuerySource<_, table>`
     --> tests/fail/mariadb_does_not_support_old_in_insert_on_conflict_do_update.rs:37:37
      |
   LL |         .get_result::<UpsertOldNew>(&mut connection)
@@ -40,8 +40,8 @@ error[E0277]: cannot select `diesel::mariadb::returning::old_impl::OldValue<colu
      |          |
      |          required by a bound introduced by this call
      |
-     = note: `diesel::mariadb::returning::old_impl::OldValue<columns::name>` is no valid selection for `ReturningQuerySource<_, table>`
-help: the trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::InsertStmtWithOnConflictDoUpdate, _>>` is not implemented for `diesel::mariadb::returning::old_impl::OldValue<columns::name>`
+     = note: `OldValue<name>` is no valid selection for `ReturningQuerySource<_, table>`
+help: the trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::InsertStmtWithOnConflictDoUpdate, _>>` is not implemented for `OldValue<name>`
       but trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::UpdateStmt, _>>` is implemented for it
     --> ROOT/diesel/src/mariadb/returning/old_impl.rs
      |
@@ -67,7 +67,7 @@ LL |         Self: LoadQuery<'query, Conn, U>,
      |               ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::get_result`
   
      
-error[E0277]: cannot select `diesel::mariadb::returning::old_impl::OldValue<columns::name>` from `ReturningQuerySource<_, table>`
+error[E0277]: cannot select `OldValue<name>` from `ReturningQuerySource<_, table>`
    --> tests/fail/mariadb_does_not_support_old_in_insert_on_conflict_do_update.rs:48:20
     |
  LL |         .returning(old_value(users::name))
@@ -75,8 +75,8 @@ error[E0277]: cannot select `diesel::mariadb::returning::old_impl::OldValue<colu
     |          |
     |          required by a bound introduced by this call
     |
-    = note: `diesel::mariadb::returning::old_impl::OldValue<columns::name>` is no valid selection for `ReturningQuerySource<_, table>`
-help: the trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::InsertStmtWithOnConflictDoUpdate, _>>` is not implemented for `diesel::mariadb::returning::old_impl::OldValue<columns::name>`
+    = note: `OldValue<name>` is no valid selection for `ReturningQuerySource<_, table>`
+help: the trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::InsertStmtWithOnConflictDoUpdate, _>>` is not implemented for `OldValue<name>`
       but trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::UpdateStmt, _>>` is implemented for it
    --> ROOT/diesel/src/mariadb/returning/old_impl.rs
     |
@@ -98,7 +98,7 @@ LL |         InsertStatement<T, U, Op, ReturningClause<E>>: Query,
     |                                                        ^^^^^ required by this bound in `InsertStatement::<T, U, Op>::returning`
  
     
-error[E0277]: cannot select `diesel::mariadb::returning::old_impl::OldValue<columns::name>` from `ReturningQuerySource<_, table>`
+error[E0277]: cannot select `OldValue<name>` from `ReturningQuerySource<_, table>`
     --> tests/fail/mariadb_does_not_support_old_in_insert_on_conflict_do_update.rs:50:31
      |
   LL |         .get_result::<String>(&mut connection)
@@ -106,8 +106,8 @@ error[E0277]: cannot select `diesel::mariadb::returning::old_impl::OldValue<colu
      |          |
      |          required by a bound introduced by this call
      |
-     = note: `diesel::mariadb::returning::old_impl::OldValue<columns::name>` is no valid selection for `ReturningQuerySource<_, table>`
-help: the trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::InsertStmtWithOnConflictDoUpdate, _>>` is not implemented for `diesel::mariadb::returning::old_impl::OldValue<columns::name>`
+     = note: `OldValue<name>` is no valid selection for `ReturningQuerySource<_, table>`
+help: the trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::InsertStmtWithOnConflictDoUpdate, _>>` is not implemented for `OldValue<name>`
       but trait `SelectableExpression<ReturningQuerySource<diesel::internal::table_macro::returning::UpdateStmt, _>>` is implemented for it
     --> ROOT/diesel/src/mariadb/returning/old_impl.rs
      |

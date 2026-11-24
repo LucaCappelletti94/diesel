@@ -1,12 +1,12 @@
-error[E0369]: cannot add `columns::name` to `columns::name`
+error[E0369]: cannot add `users::columns::name` to `users::columns::name`
   --> tests/fail/numeric_ops_require_numeric_column.rs:15:31
    |
 LL |     let _ = users.select(name + name);
-   |                          ---- ^ ---- columns::name
+   |                          ---- ^ ---- users::columns::name
    |                          |
-   |                          columns::name
+   |                          users::columns::name
    |
-note: an implementation of `std::ops::Add` might be missing for `columns::name`
+note: an implementation of `std::ops::Add` might be missing for `users::columns::name`
   --> tests/fail/numeric_ops_require_numeric_column.rs:8:9
    |
  LL |         name -> VarChar,

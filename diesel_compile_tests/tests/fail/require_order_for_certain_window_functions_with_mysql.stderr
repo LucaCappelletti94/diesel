@@ -146,7 +146,7 @@ error[E0277]: the trait bound `OverClause<_>: WindowFunctionFragment<_, Mysql, _
      |          |
      |          required by a bound introduced by this call
      |
-     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lag_utils::lag<diesel::sql_types::Integer, columns::id>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
+     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lag_utils::lag<diesel::sql_types::Integer, users::columns::id>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
      = help: the following other types implement trait `WindowFunctionFragment<Fn, DB, SP>`:
                `OverClause<Partition, Order, Frame>` implements `WindowFunctionFragment<CountStar, DB>`
                `diesel::internal::sql_functions::OverClause<__P, __O, __F>` implements `WindowFunctionFragment<count<T, expr>, __DieselInternal>`
@@ -181,7 +181,7 @@ error[E0277]: the trait bound `OverClause<_>: WindowFunctionFragment<_, Mysql, _
      |          |
      |          required by a bound introduced by this call
      |
-     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lag_with_offset_utils::lag_with_offset<diesel::sql_types::Integer, columns::id, diesel::internal::derives::as_expression::Bound<diesel::sql_types::Integer, i32>>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
+     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lag_with_offset_utils::lag_with_offset<diesel::sql_types::Integer, users::columns::id, diesel::internal::derives::as_expression::Bound<diesel::sql_types::Integer, i32>>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
      = help: the following other types implement trait `WindowFunctionFragment<Fn, DB, SP>`:
                `OverClause<Partition, Order, Frame>` implements `WindowFunctionFragment<CountStar, DB>`
                `diesel::internal::sql_functions::OverClause<__P, __O, __F>` implements `WindowFunctionFragment<count<T, expr>, __DieselInternal>`
@@ -216,7 +216,7 @@ error[E0277]: the trait bound `OverClause<_>: WindowFunctionFragment<_, Mysql, _
      |          |
      |          required by a bound introduced by this call
      |
-     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lag_with_offset_and_default_utils::lag_with_offset_and_default<diesel::sql_types::Integer, _, columns::id, diesel::internal::derives::as_expression::Bound<diesel::sql_types::Integer, i32>, _>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
+     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lag_with_offset_and_default_utils::lag_with_offset_and_default<diesel::sql_types::Integer, _, users::columns::id, diesel::internal::derives::as_expression::Bound<diesel::sql_types::Integer, i32>, _>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
      = help: the following other types implement trait `WindowFunctionFragment<Fn, DB, SP>`:
                `OverClause<Partition, Order, Frame>` implements `WindowFunctionFragment<CountStar, DB>`
                `diesel::internal::sql_functions::OverClause<__P, __O, __F>` implements `WindowFunctionFragment<count<T, expr>, __DieselInternal>`
@@ -251,7 +251,7 @@ error[E0277]: the trait bound `OverClause<_>: WindowFunctionFragment<_, Mysql, _
      |          |
      |          required by a bound introduced by this call
      |
-     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lead_utils::lead<diesel::sql_types::Integer, columns::id>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
+     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lead_utils::lead<diesel::sql_types::Integer, users::columns::id>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
      = help: the following other types implement trait `WindowFunctionFragment<Fn, DB, SP>`:
                `OverClause<Partition, Order, Frame>` implements `WindowFunctionFragment<CountStar, DB>`
                `diesel::internal::sql_functions::OverClause<__P, __O, __F>` implements `WindowFunctionFragment<count<T, expr>, __DieselInternal>`
@@ -286,7 +286,7 @@ error[E0277]: the trait bound `OverClause<_>: WindowFunctionFragment<_, Mysql, _
      |          |
      |          required by a bound introduced by this call
      |
-     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lead_with_offset_utils::lead_with_offset<diesel::sql_types::Integer, columns::id, diesel::internal::derives::as_expression::Bound<diesel::sql_types::Integer, i32>>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
+     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lead_with_offset_utils::lead_with_offset<diesel::sql_types::Integer, users::columns::id, diesel::internal::derives::as_expression::Bound<diesel::sql_types::Integer, i32>>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
      = help: the following other types implement trait `WindowFunctionFragment<Fn, DB, SP>`:
                `OverClause<Partition, Order, Frame>` implements `WindowFunctionFragment<CountStar, DB>`
                `diesel::internal::sql_functions::OverClause<__P, __O, __F>` implements `WindowFunctionFragment<count<T, expr>, __DieselInternal>`
@@ -321,7 +321,7 @@ error[E0277]: the trait bound `OverClause<_>: WindowFunctionFragment<_, Mysql, _
      |          |
      |          required by a bound introduced by this call
      |
-     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lead_with_offset_and_default_utils::lead_with_offset_and_default<diesel::sql_types::Integer, _, columns::id, diesel::internal::derives::as_expression::Bound<diesel::sql_types::Integer, i32>, _>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
+     = help: the trait `diesel::internal::sql_functions::WindowFunctionFragment<diesel::expression::functions::window_functions::lead_with_offset_and_default_utils::lead_with_offset_and_default<diesel::sql_types::Integer, _, users::columns::id, diesel::internal::derives::as_expression::Bound<diesel::sql_types::Integer, i32>, _>, Mysql, mysql_like::query_fragments::MysqlRequiresOrderForWindowFunctions>` is not implemented for `OverClause<PartitionBy<id>>`
      = help: the following other types implement trait `WindowFunctionFragment<Fn, DB, SP>`:
                `OverClause<Partition, Order, Frame>` implements `WindowFunctionFragment<CountStar, DB>`
                `diesel::internal::sql_functions::OverClause<__P, __O, __F>` implements `WindowFunctionFragment<count<T, expr>, __DieselInternal>`

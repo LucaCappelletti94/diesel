@@ -62,12 +62,12 @@ fn main() {
     diesel::update(users::table)
         .set(users::name.eq("Renamed"))
         .returning(old_value(users::name).eq("Sean"))
-        //~^ ERROR: the method `eq` exists for struct `diesel::mariadb::returning::old_impl::OldValue<columns::name>`, but its trait bounds were not satisfied
+        //~^ ERROR: the method `eq` exists for struct `OldValue<name>`, but its trait bounds were not satisfied
         .execute(&mut conn);
     diesel::update(users::table)
         .set(users::name.eq("Renamed"))
         .returning(old_value(users::id) + 1)
-        //~^ ERROR: cannot add `{integer}` to `diesel::mariadb::returning::old_impl::OldValue<columns::id>`
+        //~^ ERROR: cannot add `{integer}` to `diesel::mariadb::returning::old_impl::OldValue<users::columns::id>`
         .execute(&mut conn);
     diesel::update(users::table)
         .set(users::name.eq("Renamed"))
@@ -83,14 +83,14 @@ fn main() {
     diesel::update(users::table)
         .set(users::name.eq("Renamed"))
         .returning(old_value(users::name).eq(old_value(users::name)))
-        //~^ ERROR: the method `eq` exists for struct `diesel::mariadb::returning::old_impl::OldValue<columns::name>`, but its trait bounds were not satisfied
+        //~^ ERROR: the method `eq` exists for struct `OldValue<name>`, but its trait bounds were not satisfied
         .execute(&mut conn);
 
     // MariaDB evaluates this to the new value
     diesel::update(users::table)
         .set(users::name.eq("Renamed"))
         .returning(old_value(users::name).concat("!"))
-        //~^ ERROR: the method `concat` exists for struct `diesel::mariadb::returning::old_impl::OldValue<columns::name>`, but its trait bounds were not satisfied
+        //~^ ERROR: the method `concat` exists for struct `OldValue<name>`, but its trait bounds were not satisfied
         .execute(&mut conn);
     diesel::update(users::table)
         .set(users::name.eq("Renamed"))
@@ -101,7 +101,7 @@ fn main() {
     diesel::update(users::table)
         .set(users::name.eq("Renamed"))
         .returning(old_value(users::id).cast::<diesel::sql_types::BigInt>())
-        //~^ ERROR: the method `cast` exists for struct `diesel::mariadb::returning::old_impl::OldValue<columns::id>`, but its trait bounds were not satisfied
+        //~^ ERROR: the method `cast` exists for struct `diesel::mariadb::returning::old_impl::OldValue<users::columns::id>`, but its trait bounds were not satisfied
         .execute(&mut conn);
 
     // A nullable tuple of `old_value` is still no operand

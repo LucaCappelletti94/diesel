@@ -16,14 +16,14 @@ note: expected this to be `diesel::expression::is_contained_in_group_by::Yes`
    LL | |     }
   LL | | }
      | |_^
-note: required for `columns::id` to implement `ValidGrouping<columns::name>`
+note: required for `users::columns::id` to implement `ValidGrouping<users::columns::name>`
     --> tests/fail/cannot_load_default_select_with_group_by.rs:7:9
      |
    LL |         id -> Integer,
      |         ^^
      = note: associated types for the current `impl` cannot be restricted in `where` clauses
      = note: 1 redundant requirement hidden
-     = note: required for `(columns::id, columns::name)` to implement `ValidGrouping<columns::name>`
+     = note: required for `(users::columns::id, users::columns::name)` to implement `ValidGrouping<users::columns::name>`
      = note: required for `SelectStatement<_, _, _, _, _, _, _>` to implement `Query`
      = note: required for `SelectStatement<_, _, _, _, _, _, _>` to implement `LoadQuery<'_, _, (i32, std::string::String)>`
 note: required by a bound in `load`

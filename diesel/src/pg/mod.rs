@@ -5,6 +5,7 @@
 //! PostgreSQL, you may need to work with this module directly.
 
 pub mod expression;
+pub mod table_functions;
 mod types;
 
 pub(crate) mod backend;

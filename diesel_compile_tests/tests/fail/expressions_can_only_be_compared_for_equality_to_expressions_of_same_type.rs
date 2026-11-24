@@ -15,5 +15,5 @@ fn main() {
     let pred = id.eq("string");
     //~^ ERROR: the trait bound `&str: AsExpression<diesel::sql_types::Integer>` is not satisfied
     let pred = id.eq(name);
-    //~^ ERROR: the trait bound `columns::name: AsExpression<diesel::sql_types::Integer>` is not satisfied
+    //~^ ERROR: the trait bound `users::columns::name: AsExpression<diesel::sql_types::Integer>` is not satisfied
 }

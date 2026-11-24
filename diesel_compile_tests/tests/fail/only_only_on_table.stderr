@@ -15,12 +15,12 @@ LL | | )]
    | |__- doesn't satisfy `_: OnlyDsl` or `_: Table`
    |
    = note: the following trait bounds were not satisfied:
-           `diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>>: Table`
-           which is required by `diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>>: diesel::dsl::OnlyDsl`
-           `&diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>>: Table`
-           which is required by `&diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>>: diesel::dsl::OnlyDsl`
-           `&mut diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>>: Table`
-           which is required by `&mut diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>>: diesel::dsl::OnlyDsl`
+           `diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>>: Table`
+           which is required by `diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>>: diesel::dsl::OnlyDsl`
+           `&diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>>: Table`
+           which is required by `&diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>>: diesel::dsl::OnlyDsl`
+           `&mut diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>>: Table`
+           which is required by `&mut diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>>: diesel::dsl::OnlyDsl`
 
    
 error[E0599]: the method `only` exists for struct `SelectStatement<FromClause<table>, _, _, _>`, but its trait bounds were not satisfied
@@ -40,38 +40,38 @@ LL | | )]
    | |__- doesn't satisfy `_: OnlyDsl` or `_: Table`
    |
    = note: the following trait bounds were not satisfied:
-           `diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: Table`
-           which is required by `diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: diesel::dsl::OnlyDsl`
-           `&diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: Table`
-           which is required by `&diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: diesel::dsl::OnlyDsl`
-           `&mut diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: Table`
-           which is required by `&mut diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: diesel::dsl::OnlyDsl`
+           `diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<foo::columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: Table`
+           which is required by `diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<foo::columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: diesel::dsl::OnlyDsl`
+           `&diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<foo::columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: Table`
+           which is required by `&diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<foo::columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: diesel::dsl::OnlyDsl`
+           `&mut diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<foo::columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: Table`
+           which is required by `&mut diesel::internal::table_macro::SelectStatement<diesel::internal::table_macro::FromClause<foo::table>, diesel::query_builder::select_clause::SelectClause<foo::columns::id>, diesel::query_builder::distinct_clause::NoDistinctClause, diesel::query_builder::where_clause::WhereClause<diesel::expression::grouped::Grouped<diesel::expression::operators::Eq<foo::columns::id, diesel::internal::derives::as_expression::Bound<BigInt, i64>>>>>: diesel::dsl::OnlyDsl`
 
    
-error[E0599]: the method `only` exists for struct `columns::id`, but its trait bounds were not satisfied
-  --> tests/fail/only_only_on_table.rs:17:31
-   |
- LL |         id -> Int8,
-   |         -- method `only` not found for this struct because it doesn't satisfy `columns::id: Table` or `columns::id: diesel::dsl::OnlyDsl`
+error[E0599]: the method `only` exists for struct `foo::columns::id`, but its trait bounds were not satisfied
+   --> tests/fail/only_only_on_table.rs:17:31
+    |
+  LL |         id -> Int8,
+    |         -- method `only` not found for this struct because it doesn't satisfy `foo::columns::id: Table` or `foo::columns::id: diesel::dsl::OnlyDsl`
 ...
-LL |     foo::table.select(foo::id.only());
-   |                               ^^^^ method cannot be called on `columns::id` due to unsatisfied trait bounds
-   |
-   = note: the following trait bounds were not satisfied:
-           `columns::id: Table`
-           which is required by `columns::id: diesel::dsl::OnlyDsl`
-           `&columns::id: Table`
-           which is required by `&columns::id: diesel::dsl::OnlyDsl`
-           `&mut columns::id: Table`
-           which is required by `&mut columns::id: diesel::dsl::OnlyDsl`
+ LL |     foo::table.select(foo::id.only());
+    |                               ^^^^ method cannot be called on `foo::columns::id` due to unsatisfied trait bounds
+    |
+    = note: the following trait bounds were not satisfied:
+            `foo::columns::id: Table`
+            which is required by `foo::columns::id: diesel::dsl::OnlyDsl`
+            `&foo::columns::id: Table`
+            which is required by `&foo::columns::id: diesel::dsl::OnlyDsl`
+            `&mut foo::columns::id: Table`
+            which is required by `&mut foo::columns::id: diesel::dsl::OnlyDsl`
 note: the trait `Table` must be implemented
-  --> ROOT/diesel/src/query_source/mod.rs
-   |
+   --> ROOT/diesel/src/query_source/mod.rs
+    |
 LL | pub trait Table: QuerySource + AsQuery + Sized {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = help: items from traits can only be used if the trait is implemented and in scope
-   = note: the following trait defines an item `only`, perhaps you need to implement it:
-           candidate #1: `diesel::dsl::OnlyDsl`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: items from traits can only be used if the trait is implemented and in scope
+    = note: the following trait defines an item `only`, perhaps you need to implement it:
+            candidate #1: `diesel::dsl::OnlyDsl`
 
 error[E0277]: the trait bound `Only<foo::table>: LoadQuery<'_, diesel::SqliteConnection, _>` is not satisfied
     --> tests/fail/only_only_on_table.rs:22:28

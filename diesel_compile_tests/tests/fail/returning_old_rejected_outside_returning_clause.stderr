@@ -1,11 +1,11 @@
-error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<columns::name>` from `users::table`
+error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<users::columns::name>` from `users::table`
    --> tests/fail/returning_old_rejected_outside_returning_clause.rs:21:10
     |
  LL |         .select(old(name))
     |          ^^^^^^ unsatisfied trait bound
     |
-    = note: `diesel::pg::returning::old_impl::Old<columns::name>` is no valid selection for `users::table`
-help: the trait `SelectableExpression<table>` is not implemented for `diesel::pg::returning::old_impl::Old<columns::name>`
+    = note: `diesel::pg::returning::old_impl::Old<users::columns::name>` is no valid selection for `users::table`
+help: the trait `SelectableExpression<table>` is not implemented for `diesel::pg::returning::old_impl::Old<users::columns::name>`
       but trait `SelectableExpression<diesel::internal::table_macro::returning::ReturningQuerySource<diesel::internal::table_macro::returning::UpdateStmt, table>>` is implemented for it
    --> ROOT/diesel/src/pg/returning/old_impl.rs
     |
@@ -15,10 +15,10 @@ LL | |     C: Column,
 LL | |     Self: AppearsOnTable<ReturningQuerySource<UpdateStmt, C::Table>>,
     | |_____________________________________________________________________^
     = help: for that trait implementation, expected `ReturningQuerySource<UpdateStmt, table>`, found `users::table`
-    = note: required for `SelectStatement<FromClause<table>>` to implement `SelectDsl<diesel::pg::returning::old_impl::Old<columns::name>>`
+    = note: required for `SelectStatement<FromClause<table>>` to implement `SelectDsl<Old<name>>`
  
     
-error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<columns::name>` from `users::table`
+error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<users::columns::name>` from `users::table`
     --> tests/fail/returning_old_rejected_outside_returning_clause.rs:23:25
      |
   LL |         .load::<String>(&mut connection)
@@ -26,8 +26,8 @@ error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<columns::name>
      |          |
      |          required by a bound introduced by this call
      |
-     = note: `diesel::pg::returning::old_impl::Old<columns::name>` is no valid selection for `users::table`
-help: the trait `SelectableExpression<table>` is not implemented for `diesel::pg::returning::old_impl::Old<columns::name>`
+     = note: `diesel::pg::returning::old_impl::Old<users::columns::name>` is no valid selection for `users::table`
+help: the trait `SelectableExpression<table>` is not implemented for `diesel::pg::returning::old_impl::Old<users::columns::name>`
       but trait `SelectableExpression<diesel::internal::table_macro::returning::ReturningQuerySource<diesel::internal::table_macro::returning::UpdateStmt, table>>` is implemented for it
     --> ROOT/diesel/src/pg/returning/old_impl.rs
      |
@@ -51,14 +51,14 @@ LL |         Self: LoadQuery<'query, Conn, U>,
      |               ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::load`
   
      
-error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<columns::name>` from `users::table`
+error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<users::columns::name>` from `users::table`
    --> tests/fail/returning_old_rejected_outside_returning_clause.rs:29:10
     |
  LL |         .select(old(name).nullable())
     |          ^^^^^^ unsatisfied trait bound
     |
-    = note: `diesel::pg::returning::old_impl::Old<columns::name>` is no valid selection for `users::table`
-help: the trait `SelectableExpression<table>` is not implemented for `diesel::pg::returning::old_impl::Old<columns::name>`
+    = note: `diesel::pg::returning::old_impl::Old<users::columns::name>` is no valid selection for `users::table`
+help: the trait `SelectableExpression<table>` is not implemented for `diesel::pg::returning::old_impl::Old<users::columns::name>`
       but trait `SelectableExpression<diesel::internal::table_macro::returning::ReturningQuerySource<diesel::internal::table_macro::returning::UpdateStmt, table>>` is implemented for it
    --> ROOT/diesel/src/pg/returning/old_impl.rs
     |
@@ -78,7 +78,7 @@ error[E0271]: type mismatch resolving `<table as AppearsInFromClause<OldIdent>>:
 LL |         .select(old(name).nullable())
    |          ^^^^^^ expected `Once`, found `Never`
    |
-   = note: required for `diesel::pg::returning::old_impl::Old<columns::name>` to implement `AppearsOnTable<users::table>`
+   = note: required for `diesel::pg::returning::old_impl::Old<users::columns::name>` to implement `AppearsOnTable<users::table>`
    = note: 1 redundant requirement hidden
    = note: required for `NullableExpression<Old<name>>` to implement `AppearsOnTable<users::table>`
    = note: required for `NullableExpression<Old<name>>` to implement `SelectableExpression<users::table>`
@@ -101,7 +101,7 @@ note: expected this to be `diesel::query_source::Once`
 LL | |     }
 LL | | }
    | |_^
-   = note: required for `diesel::pg::returning::old_impl::Old<columns::name>` to implement `AppearsOnTable<users::table>`
+   = note: required for `diesel::pg::returning::old_impl::Old<users::columns::name>` to implement `AppearsOnTable<users::table>`
    = note: 1 redundant requirement hidden
    = note: required for `NullableExpression<Old<name>>` to implement `AppearsOnTable<users::table>`
    = note: required for `NullableExpression<Old<name>>` to implement `SelectableExpression<users::table>`
@@ -109,7 +109,7 @@ LL | | }
 
       = note: this error originates in the macro `table` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<columns::name>` from `users::table`
+error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<users::columns::name>` from `users::table`
     --> tests/fail/returning_old_rejected_outside_returning_clause.rs:33:33
      |
   LL |         .load::<Option<String>>(&mut connection)
@@ -117,8 +117,8 @@ error[E0277]: cannot select `diesel::pg::returning::old_impl::Old<columns::name>
      |          |
      |          required by a bound introduced by this call
      |
-     = note: `diesel::pg::returning::old_impl::Old<columns::name>` is no valid selection for `users::table`
-help: the trait `SelectableExpression<table>` is not implemented for `diesel::pg::returning::old_impl::Old<columns::name>`
+     = note: `diesel::pg::returning::old_impl::Old<users::columns::name>` is no valid selection for `users::table`
+help: the trait `SelectableExpression<table>` is not implemented for `diesel::pg::returning::old_impl::Old<users::columns::name>`
       but trait `SelectableExpression<diesel::internal::table_macro::returning::ReturningQuerySource<diesel::internal::table_macro::returning::UpdateStmt, table>>` is implemented for it
     --> ROOT/diesel/src/pg/returning/old_impl.rs
      |
@@ -151,7 +151,7 @@ error[E0271]: type mismatch resolving `<table as AppearsInFromClause<OldIdent>>:
      |          |
      |          required by a bound introduced by this call
      |
-     = note: required for `diesel::pg::returning::old_impl::Old<columns::name>` to implement `AppearsOnTable<users::table>`
+     = note: required for `diesel::pg::returning::old_impl::Old<users::columns::name>` to implement `AppearsOnTable<users::table>`
      = note: 1 redundant requirement hidden
      = note: required for `NullableExpression<Old<name>>` to implement `AppearsOnTable<users::table>`
      = note: required for `NullableExpression<Old<name>>` to implement `SelectableExpression<users::table>`
@@ -187,7 +187,7 @@ note: expected this to be `diesel::query_source::Once`
   LL | |     }
   LL | | }
      | |_^
-     = note: required for `diesel::pg::returning::old_impl::Old<columns::name>` to implement `AppearsOnTable<users::table>`
+     = note: required for `diesel::pg::returning::old_impl::Old<users::columns::name>` to implement `AppearsOnTable<users::table>`
      = note: 1 redundant requirement hidden
      = note: required for `NullableExpression<Old<name>>` to implement `AppearsOnTable<users::table>`
      = note: required for `NullableExpression<Old<name>>` to implement `SelectableExpression<users::table>`

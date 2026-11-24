@@ -5,8 +5,6 @@ LL |     let command = update(users).set(foo.eq(name));
    |                                 ^^^ the trait `Column` is not implemented for `Bound<Text, &str>`
    |
    = help: the following other types implement trait `Column`:
-             columns::id
-             columns::name
              diesel::expression::assume_not_null::AssumeNotNull<T>
              pg::metadata_lookup::pg_namespace::columns::nspname
              pg::metadata_lookup::pg_namespace::columns::oid
@@ -14,6 +12,8 @@ LL |     let command = update(users).set(foo.eq(name));
              pg::metadata_lookup::pg_type::columns::typarray
              pg::metadata_lookup::pg_type::columns::typname
              pg::metadata_lookup::pg_type::columns::typnamespace
+             users::columns::id
+             users::columns::name
    = note: required for `Bound<Text, &str>` to implement `AssignmentTarget`
    = note: required for `Eq<Bound<Text, &str>, name>` to implement `AsChangeset`
 

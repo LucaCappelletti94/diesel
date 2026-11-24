@@ -41,7 +41,7 @@ LL |         Self: LoadQuery<'query, Conn, U>,
      |               ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::get_result`
   
      
-error[E0277]: `diesel::internal::sql_functions::Order<columns::name, false>` is no valid SQL fragment for the `Mysql` backend
+error[E0277]: `Order<name, false>` is no valid SQL fragment for the `Mysql` backend
     --> tests/fail/aggregate_expressions_disallow_unsupported_features_on_mysql.rs:24:28
      |
   LL |         .get_result::<i64>(&mut conn)
@@ -49,7 +49,7 @@ error[E0277]: `diesel::internal::sql_functions::Order<columns::name, false>` is 
      |          |
      |          required by a bound introduced by this call
      |
-     = help: the trait `QueryFragment<Mysql, diesel::internal::derives::multiconnection::sql_dialect::aggregate_function_expressions::NoAggregateFunctionExpressions>` is not implemented for `diesel::internal::sql_functions::Order<columns::name, false>`
+     = help: the trait `QueryFragment<Mysql, diesel::internal::derives::multiconnection::sql_dialect::aggregate_function_expressions::NoAggregateFunctionExpressions>` is not implemented for `Order<name, false>`
      = note: this usually means that the `Mysql` database system does not support 
              this SQL syntax
 help: the following other types implement trait `QueryFragment<DB, SP>`
@@ -75,7 +75,7 @@ help: the following other types implement trait `QueryFragment<DB, SP>`
   LL | |     OrderClause<E>: QueryFragment<DB>,
   LL | |     DB: Backend,
      | |________________^ `diesel::internal::sql_functions::Order<E, true>` implements `QueryFragment<DB>`
-     = note: required for `diesel::internal::sql_functions::Order<columns::name, false>` to implement `QueryFragment<Mysql>`
+     = note: required for `Order<name, false>` to implement `QueryFragment<Mysql>`
      = note: 4 redundant requirements hidden
      = note: required for `SelectStatement<FromClause<table>, _>` to implement `QueryFragment<Mysql>`
      = note: required for `SelectStatement<FromClause<table>, _>` to implement `LoadQuery<'_, MysqlLikeConnection<Mysql>, i64>`

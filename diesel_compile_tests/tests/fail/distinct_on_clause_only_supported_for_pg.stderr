@@ -1,14 +1,14 @@
-error[E0277]: `DistinctOnClause<columns::name>` is no valid SQL fragment for the `Sqlite` backend
+error[E0277]: `DistinctOnClause<users::columns::name>` is no valid SQL fragment for the `Sqlite` backend
     --> tests/fail/distinct_on_clause_only_supported_for_pg.rs:16:41
      |
   LL |     users.distinct_on(name).get_results(&mut sqlite_connection);
-     |                             ----------- ^^^^^^^^^^^^^^^^^^^^^^ the trait `QueryFragment<Sqlite>` is not implemented for `DistinctOnClause<columns::name>`
+     |                             ----------- ^^^^^^^^^^^^^^^^^^^^^^ the trait `QueryFragment<Sqlite>` is not implemented for `DistinctOnClause<users::columns::name>`
      |                             |
      |                             required by a bound introduced by this call
      |
      = note: this usually means that the `Sqlite` database system does not support 
              this SQL syntax
-help: the trait `QueryFragment<Sqlite, NotSpecialized>` is not implemented for `DistinctOnClause<columns::name>`
+help: the trait `QueryFragment<Sqlite, NotSpecialized>` is not implemented for `DistinctOnClause<users::columns::name>`
       but trait `QueryFragment<Pg, NotSpecialized>` is implemented for it
     --> ROOT/diesel/src/pg/query_builder/distinct_on.rs
      |
@@ -32,17 +32,17 @@ LL |         Self: LoadQuery<'query, Conn, U>,
      |               ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::get_results`
   
      
-error[E0277]: `DistinctOnClause<columns::name>` is no valid SQL fragment for the `Mysql` backend
+error[E0277]: `DistinctOnClause<users::columns::name>` is no valid SQL fragment for the `Mysql` backend
     --> tests/fail/distinct_on_clause_only_supported_for_pg.rs:21:41
      |
   LL |     users.distinct_on(name).get_results(&mut mysql_connection);
-     |                             ----------- ^^^^^^^^^^^^^^^^^^^^^ the trait `QueryFragment<Mysql>` is not implemented for `DistinctOnClause<columns::name>`
+     |                             ----------- ^^^^^^^^^^^^^^^^^^^^^ the trait `QueryFragment<Mysql>` is not implemented for `DistinctOnClause<users::columns::name>`
      |                             |
      |                             required by a bound introduced by this call
      |
      = note: this usually means that the `Mysql` database system does not support 
              this SQL syntax
-help: the trait `QueryFragment<Mysql, NotSpecialized>` is not implemented for `DistinctOnClause<columns::name>`
+help: the trait `QueryFragment<Mysql, NotSpecialized>` is not implemented for `DistinctOnClause<users::columns::name>`
       but trait `QueryFragment<Pg, NotSpecialized>` is implemented for it
     --> ROOT/diesel/src/pg/query_builder/distinct_on.rs
      |
